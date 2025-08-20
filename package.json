@@ -1,0 +1,52 @@
+{
+  "name": "aish",
+  "version": "0.1.0",
+  "description": "AI Shell - An intelligent shell wrapper with Claude-powered assistance for natural language command generation and error correction",
+  "main": "src/index.js",
+  "type": "module",
+  "bin": {
+    "aish": "./bin/aish.js"
+  },
+  "scripts": {
+    "start": "node src/index.js",
+    "test": "node --test",
+    "lint": "eslint src/"
+  },
+  "keywords": [
+    "shell",
+    "ai",
+    "claude",
+    "anthropic",
+    "terminal",
+    "cli",
+    "command-line",
+    "natural-language",
+    "developer-tools"
+  ],
+  "author": "shcv",
+  "license": "MIT",
+  "homepage": "https://github.com/shcv/aish",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/shcv/aish.git"
+  },
+  "bugs": {
+    "url": "https://github.com/shcv/aish/issues"
+  },
+  "dependencies": {
+    "@anthropic-ai/claude-code": "^1.0.83",
+    "execa": "^8.0.1",
+    "chalk": "^5.3.0",
+    "ora": "^8.0.1",
+    "prompts": "^2.4.2",
+    "js-yaml": "^4.1.0",
+    "minimist": "^1.2.8",
+    "xdg-basedir": "^5.1.0"
+  },
+  "devDependencies": {
+    "eslint": "^8.56.0"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  }
+}

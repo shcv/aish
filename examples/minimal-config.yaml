@@ -1,0 +1,10 @@
+# Minimal configuration for aish
+# This is all you need to get started
+# Place in ~/.config/aish/config.yaml
+
+shell:
+  default: /bin/bash
+
+ai:
+  model: sonnet
+  timeout_seconds: 60

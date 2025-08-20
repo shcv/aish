@@ -1,0 +1,45 @@
+#!/usr/bin/env clsh --shell /bin/bash
+# Example clsh configuration file (shell script format)
+# This file is executed when clsh starts up
+
+# Set the default shell for clsh to use
+export CLSH_SHELL="/bin/bash"
+
+# Configure AI behavior
+export CLSH_MODEL="sonnet"
+export CLSH_TIMEOUT="10"
+export CLSH_MAX_CONTEXT="100"
+
+# Set permissions (always_ask, filter, never_ask)
+export CLSH_PERM_SUBSTITUTION="always_ask"
+export CLSH_PERM_ERROR="always_ask"
+export CLSH_PERM_COMMAND="filter"
+
+# Configure appearance
+export CLSH_THEME="default"
+export CLSH_COLOR_AI="cyan"
+export CLSH_COLOR_ERROR="red"
+export CLSH_COLOR_SUCCESS="green"
+export CLSH_COLOR_PROMPT="yellow"
+
+# History settings
+export CLSH_HISTORY="true"
+export CLSH_HISTORY_FILE="$HOME/.clsh_history"
+export CLSH_HISTORY_MAX="10000"
+
+# Error handling
+export CLSH_ERROR_HANDLING="true"
+
+# You can also run any shell commands here
+# For example, to add custom aliases or functions:
+
+# Check if Claude is installed
+if command -v claude >/dev/null 2>&1; then
+    echo "# Claude Code CLI detected" >&2
+else
+    echo "# Warning: Claude Code CLI not found" >&2
+    export CLSH_NO_AI="true"
+fi
+
+# Custom startup message
+echo "# clsh configured via .clshrc" >&2
