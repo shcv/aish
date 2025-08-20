@@ -1,16 +1,47 @@
-# aish - AI Shell
+# 🔥 aish - AI-Powered Interactive Shell
 
-An intelligent shell wrapper that enhances your command line with AI assistance powered by Claude.
+aish (AI Shell) is an intelligent command-line interface that seamlessly integrates Claude AI into your terminal workflow. It helps you write commands, answer questions, and fix errors—all without leaving your shell.
 
-## Features
+## ✨ What Can aish Do?
 
-- **Natural Language Substitution**: Use `~{description}` to embed natural language in commands
-- **Command Generation**: Type `? your request` to generate commands from natural language
-- **Quick Accept**: Type `++` to accept the previous AI suggestion
-- **Error Correction**: Automatic suggestions when commands fail
-- **Transparent Pass-through**: Seamlessly works with interactive programs like vim, ssh, etc.
+### 🤖 Ask Questions in Natural Language
+```bash
+🔥 projects (main) ❯ ? what's the largest file in this directory?
+[Bash: du -h * | sort -rh | head -1]
+Answer: The largest file is node_modules at 42M
+```
 
-## Installation
+### 🛠️ Generate Commands from Descriptions
+```bash
+🔥 docs (main) ❯ ! find all markdown files modified in the last week
+[Grep: "\.md$"]
+[Thinking] I'll help you find markdown files modified in the last week...
+Generated command:
+find . -name "*.md" -mtime -7
+
+Execute this command? [Yes/No/Edit] > 
+```
+
+### 🔧 Automatic Error Correction
+```bash
+🔥 myapp (main) ❯ git push origin mian
+error: src refspec mian does not match any
+[Analyzing error...]
+
+Command failed. Suggested fix:
+git push origin main
+
+Run corrected command? [Yes/No/Edit] >
+```
+
+### 📚 Intelligent Command History
+- Use ↑/↓ arrows to navigate through previous commands
+- History persists between sessions
+- AI-generated commands are added to history when executed
+
+## 🚀 Quick Start
+
+### Installation
 
 ```bash
 # Clone the repository
@@ -20,133 +51,161 @@ cd aish
 # Install dependencies
 npm install
 
-# Link globally (optional)
+# Link globally for easy access
 npm link
 ```
 
-## Prerequisites
-
+### Prerequisites
 - Node.js 18 or later
-- Claude Code CLI (`claude` command) for AI features
+- Claude CLI (`claude` command) - Install from [claude.ai/cli](https://claude.ai/cli)
 
-## Usage
-
-Start aish:
+### First Run
 ```bash
-node src/index.js
-# or if linked globally:
+# Start aish
 aish
+
+# On first run, aish will guide you through setup:
+# - Choose your AI model (Sonnet recommended)
+# - Enable/disable features
+# - Set up command history
 ```
 
-### Examples
+## 📖 How to Use aish
 
-Natural language substitution:
-```bash
-$ ls ~{files modified today}
-# Suggests: ls -la -t | grep "$(date +%b\ %d)"
+### Basic Commands
+
+| Command | Description | Example |
+|---------|-------------|---------|
+| `?` | Ask a question | `? how do I check disk usage?` |
+| `!` | Generate a command | `! compress all images in this folder` |
+| Regular commands | Execute normally | `ls -la`, `git status`, etc. |
+| `exit` | Quit aish | `exit` |
+
+### Interactive Menus
+
+When aish suggests a command, you'll see:
+```
+Execute this command? 
+  ▸ Yes     # Run the command
+    No      # Skip it
+    Edit    # Modify before running
 ```
 
-Generate commands:
-```bash
-$ ? show disk usage
-# Suggests: df -h
-```
+### Visual Feedback
 
-Automatic error correction:
-```bash
-$ git push origin mian
-# Error detected, suggests: git push origin main
-```
+aish provides clear visual indicators:
+- 🔥 Orange prompt with current directory and git branch
+- `[Read: file.txt]` - Shows when AI reads files
+- `[Grep: "pattern"]` - Shows search operations
+- `[Thinking]` - AI processing steps
+- ✻ ✼ ✽ Animated spinner during AI operations
 
-### Options
+## ⚙️ Configuration
 
-- `--help, -h` - Show help message
-- `--version` - Show version information
-- `--config, -c PATH` - Use specific configuration file
-- `--shell, -s SHELL` - Override default shell
-- `--no-ai` - Disable AI features
-- `--debug, -d` - Enable debug mode (show all Claude messages)
-- `--verbose, -v` - Show extra detail in responses
-- `--quiet, -q` - Minimal output (only show final answers)
-
-### Output Modes
-
-aish provides three output modes for AI responses:
-
-**Normal Mode** (default)
-- Shows abbreviated intermediate thinking steps
-- Displays tool usage summary
-- Shows the final answer
-- Best for everyday use with helpful context
-
-**Quiet Mode** (`-q` or `--quiet`)
-- Only shows the final answer
-- No intermediate steps or tool usage
-- Best for scripts or when you just want the result
-
-**Verbose Mode** (`-v` or `--verbose`)  
-- Shows full intermediate thinking steps
-- Displays detailed tool usage information
-- Shows configuration loading details
-- Best for debugging or understanding Claude's reasoning
-
-Example with different modes:
-```bash
-# Normal mode - shows abbreviated steps
-$ aish
-aish:~$ ? what files are in this directory?
-[Step] Let me check the files in the current directory...
-[Used tools: LS]
-Answer: The directory contains: src/, package.json, README.md...
-
-# Quiet mode - just the answer
-$ aish -q
-aish:~$ ? what files are in this directory?
-Answer: The directory contains: src/, package.json, README.md...
-
-# Verbose mode - full details
-$ aish -v
-aish:~$ ? what files are in this directory?
-
-[Step] Let me check the files in the current directory using the LS tool
-[Tools: LS]
-[Used tools: LS]
-Answer: The directory contains: src/, package.json, README.md...
-```
-
-## Configuration
-
-Create a config file at `~/.config/aish/config.yaml`:
+aish can be configured via `~/.config/aish/config.yaml`:
 
 ```yaml
+# Shell settings
 shell:
   default: /bin/bash
-  args: []
 
-syntax:
-  substitution: "~{}"
-  command: "?"
-  accept: "++"
+# Command history
+history:
+  enabled: true
+  file: ~/.aish_history
+  max_entries: 10000
 
+# AI behavior
+ai:
+  model: sonnet          # or opus, haiku
+  timeout_seconds: 60
+
+# Error handling
 error_handling:
   enabled: true
   ignore_exit_codes:
-    grep: [1]
-    diff: [1]
+    grep: [1]           # Don't offer corrections for grep "not found"
+    diff: [1]           # Or diff with differences
 
-ai:
-  model: sonnet
-  max_context_lines: 100
-  timeout_seconds: 60
+# Visual appearance
+appearance:
+  theme: default
 ```
 
-## Development
+## 🎯 Command-Line Options
 
-Run tests:
 ```bash
-npm test
+aish [options]
+
+Options:
+  -h, --help         Show help
+  -v, --verbose      Show detailed AI thinking process
+  -q, --quiet        Minimal output, just show results
+  -d, --debug        Debug mode with technical details
+  --no-ai            Disable AI features (regular shell only)
+  -c, --config PATH  Use specific config file
+  -s, --shell SHELL  Override default shell
 ```
 
-## License
+## 💡 Pro Tips
 
-MIT
+1. **Quick Corrections**: When a command fails, aish automatically suggests fixes
+2. **History Search**: Use Ctrl+R to search command history
+3. **Edit Suggestions**: Choose "Edit" to modify AI suggestions before running
+4. **Verbose Mode**: Use `-v` to see Claude's full reasoning process
+5. **Quiet Scripts**: Use `-q` for scripting when you only need results
+
+## 🔍 Example Session
+
+```bash
+$ aish
+
+🔥 ~ ❯ ? how many Python files are in my projects folder?
+[Read: /home/user/projects]
+[Grep: "\.py$"]
+Answer: You have 47 Python files in your projects folder.
+
+🔥 ~ ❯ ! create a backup of all config files
+Generated command:
+tar -czf configs_backup_$(date +%Y%m%d).tar.gz ~/.config/
+
+Execute this command? [Yes/No/Edit] > yes
+Creating backup...
+
+🔥 ~ ❯ cd /etc/nginx
+🔥 nginx (main) ❯ ! show active server blocks
+[Read: nginx.conf]
+[Grep: "server {"]
+Generated command:
+grep -l "server {" sites-enabled/*
+
+Execute this command? [Yes/No/Edit] > yes
+sites-enabled/default
+sites-enabled/myapp.conf
+
+🔥 nginx (main) ❯ exit
+Goodbye!
+```
+
+## 🐛 Troubleshooting
+
+| Issue | Solution |
+|-------|----------|
+| "Claude not found" | Install Claude CLI: `npm install -g @anthropic/claude-cli` |
+| Commands not working | Check your shell path in config.yaml |
+| History not saving | Ensure `~/.aish_history` is writable |
+| AI responses slow | Try using `haiku` model for faster responses |
+
+## 📝 License
+
+CC0 - Public Domain
+
+## 🤝 Contributing
+
+Contributions welcome!
+
+## 🔗 Links
+
+- [Report Issues](https://github.com/shcv/aish/issues)
+- [Documentation](https://github.com/shcv/aish/wiki)
+- [Claude CLI Setup](https://claude.ai/cli)
