@@ -489,7 +489,12 @@ Respond with ONLY the corrected command, or the same command if no correction is
       // Only return if it's different from the original
       return suggestion !== context.command ? suggestion : null;
     } catch (error) {
-      // Silently fail for error correction
+      // Check if the error is due to interruption
+      if (error.message === 'Request timed out' || error.message === 'Connection closed') {
+        // This is expected when interrupted
+        return null;
+      }
+      // Silently fail for other error correction errors
       return null;
     }
   }

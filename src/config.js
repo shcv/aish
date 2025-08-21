@@ -13,6 +13,7 @@ const EXAMPLE_CONFIG = `# aish Configuration File
 shell:
   default: ${process.env.SHELL || '/bin/bash'}
   args: []
+  eof_exits: false         # Whether Ctrl+D exits immediately (true) or shows warning (false)
 
 # Syntax configuration
 syntax:

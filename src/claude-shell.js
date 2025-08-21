@@ -202,6 +202,7 @@ export class ClaudeShell {
       });
       
       let cancelled = false;
+      let lineReceived = false;
       
       rl.on('SIGINT', () => {
         cancelled = true;
@@ -210,12 +211,26 @@ export class ClaudeShell {
       });
       
       rl.on('line', (input) => {
+        lineReceived = true;
         rl.close();
         resolve(input);
       });
       
       rl.on('close', () => {
-        if (cancelled) {
+        // If we got here without a line and without SIGINT, it's EOF (Ctrl+D)
+        if (!lineReceived && !cancelled) {
+          // Check config for EOF behavior
+          const eofExits = this.config.shell?.eof_exits ?? false;
+
+          if (eofExits) {
+            // Exit immediately
+            resolve('exit');
+          } else {
+            // Show warning and continue
+            console.log(chalk.yellow('\nUse "exit" to quit aish'));
+            resolve(null);
+          }
+        } else if (cancelled) {
           resolve(null);
         }
       });
@@ -479,6 +494,18 @@ export class ClaudeShell {
     
     const spinner = this.createSpinner('Analyzing error...');
     
+    // Set up SIGINT handler for canceling the analysis
+    let analysisInterrupted = false;
+    const sigintHandler = () => {
+      analysisInterrupted = true;
+      if (this.claude && this.claude.queryStream && this.claude.queryStream.interrupt) {
+        this.claude.queryStream.interrupt();
+      }
+      this.stopSpinner(spinner);
+      console.log(chalk.yellow('\nAnalysis cancelled'));
+    };
+    process.once('SIGINT', sigintHandler);
+
     try {
       const context = {
         command,
@@ -489,8 +516,17 @@ export class ClaudeShell {
       };
       
       const suggestion = await this.claude.suggestCorrection(context);
+
+      // Remove the SIGINT handler if we completed normally
+      process.removeListener('SIGINT', sigintHandler);
+
       this.stopSpinner(spinner);
       
+      // If analysis was interrupted, return early
+      if (analysisInterrupted) {
+        return;
+      }
+
       if (suggestion && suggestion !== command) {
         console.log(chalk.yellow('\nCommand failed. Suggested fix:'));
         console.log(chalk.bold(suggestion));
@@ -515,8 +551,16 @@ export class ClaudeShell {
         }
       }
     } catch (error) {
+      // Remove the SIGINT handler on error
+      process.removeListener('SIGINT', sigintHandler);
+
       // Silently fail if error correction fails
       this.stopSpinner(spinner);
+
+      // If it was interrupted, we already showed the message
+      if (!analysisInterrupted && process.env.AISH_DEBUG) {
+        console.log(chalk.gray(`[DEBUG] Error correction failed: ${error.message}`));
+      }
     }
   }
   

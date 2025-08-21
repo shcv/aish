@@ -63,6 +63,16 @@ async function main() {
     const { isFirstRun } = await import('./first-run.js');
     if (!args.config && await isFirstRun()) {
       const config = await firstRunSetup();
+
+      // Override EOF behavior if specified in CLI args
+      if (args['eof-exits'] !== undefined) {
+        config.shell = config.shell || {};
+        config.shell.eof_exits = true;
+      } else if (args['no-eof-exits'] !== undefined) {
+        config.shell = config.shell || {};
+        config.shell.eof_exits = false;
+      }
+
       const shell = new ClaudeShell(config);
       await shell.start();
     } else {
@@ -73,6 +83,15 @@ async function main() {
         console.log(chalk.gray(`Loaded config from: ${config._metadata.source.path}`));
       }
       
+      // Override EOF behavior if specified in CLI args
+      if (args['eof-exits'] !== undefined) {
+        config.shell = config.shell || {};
+        config.shell.eof_exits = true;
+      } else if (args['no-eof-exits'] !== undefined) {
+        config.shell = config.shell || {};
+        config.shell.eof_exits = false;
+      }
+
       const shell = new ClaudeShell(config);
       await shell.start();
     }
@@ -105,6 +124,8 @@ ${chalk.bold('Options:')}
   --quiet, -q       Minimal output (only show final answers)
   --yes, -y         Auto-accept AI suggestions (useful for scripts)
   --yolo            Same as --yes (live dangerously)
+  --eof-exits       Make Ctrl+D exit immediately (like bash)
+  --no-eof-exits    Make Ctrl+D show warning instead of exiting
 
 ${chalk.bold('Features:')}
   ${chalk.cyan('~{text}')}         Natural language substitution

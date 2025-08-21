@@ -1,5 +1,5 @@
 {
-  "name": "aish",
+  "name": "@shcv/aish",
   "version": "0.1.0",
   "description": "AI Shell - An intelligent shell wrapper with Claude-powered assistance for natural language command generation and error correction",
   "main": "src/index.js",
