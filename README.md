@@ -2,6 +2,8 @@
 
 aish (AI Shell) is an intelligent command-line interface that seamlessly integrates Claude AI into your terminal workflow. It helps you write commands, answer questions, and fix errors—all without leaving your shell.
 
+[![Demo GIF](assets/demo.gif)](https://asciinema.org/a/pMrl3NEj3mLs5VxH4POgGEQFp)
+
 ## ✨ What Can aish Do?
 
 ### 🤖 Ask Questions in Natural Language

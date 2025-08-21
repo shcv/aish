@@ -402,12 +402,14 @@ Question: ${context.query}`;
         os: context.os,
         shell: context.shell
       };
-      prompt = `You are helping a user generate shell commands. Respond with ONLY the command, no explanation.
+      prompt = `You are helping a user generate shell commands for running in a shell.
 Operating system: ${context.os}
 Shell: ${context.shell}
 Current directory: ${context.cwd}
 
-Request: ${context.query}`;
+Request: ${context.query}
+
+IMPORTANT: Your final message must contain ONLY the shell command to execute. No explanations, no formatting, no additional text - just the raw command.`;
       this.contextInitialized = true;
       this.lastCwd = context.cwd;
     } else {
@@ -417,6 +419,7 @@ Request: ${context.query}`;
         prompt += `\nCurrent directory: ${context.cwd}`;
         this.lastCwd = context.cwd;
       }
+      prompt += `\n\nIMPORTANT: Your final message must contain ONLY the shell command to execute. No explanations, no formatting, no additional text - just the raw command.`;
     }
 
     try {
