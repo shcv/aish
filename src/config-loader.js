@@ -87,9 +87,36 @@ export class ConfigLoader {
       },
       history: {
         enabled: true,
-        file: path.join(os.homedir(), '.clsh_history'),
+        mode: 'aish',
+        file: path.join(os.homedir(), '.aish_history'),
         max_entries: 10000,
-        save_corrections: true
+        save_corrections: true,
+        shell_integration: {
+          enabled: true,
+          import_on_start: false,
+          sync_commands: true
+        },
+        search: {
+          fuzzy: true,
+          max_results: 50,
+          include_timestamps: true,
+          deduplicate: true
+        }
+      },
+      completion: {
+        enabled: true,
+        backend: 'auto',
+        fuzzy_search: true,
+        fuzzy_backend: 'auto',
+        max_suggestions: 10,
+        cache_ttl: 300000,
+        ai_suggestions: false,
+        history_suggestions: true,
+        keybindings: {
+          complete: 'tab',
+          history_search: 'ctrl-r',
+          ai_complete: 'ctrl-space'
+        }
       },
       appearance: {
         theme: 'default',
@@ -140,17 +167,17 @@ export class ConfigLoader {
 
     // Config directories (can contain multiple files)
     locations.push(
-      { path: '/etc/clsh', priority: 'system' },
-      { path: path.join(xdgConfig || path.join(os.homedir(), '.config'), 'clsh'), priority: 'user' },
-      { path: path.join(os.homedir(), '.clsh'), priority: 'user' },
-      { path: path.join(process.cwd(), '.clsh'), priority: 'project' }
+      { path: '/etc/aish', priority: 'system' },
+      { path: path.join(xdgConfig || path.join(os.homedir(), '.config'), 'aish'), priority: 'user' },
+      { path: path.join(os.homedir(), '.aish'), priority: 'user' },
+      { path: path.join(process.cwd(), '.aish'), priority: 'project' }
     );
 
-    // RC files (executed through clsh)
+    // RC files (executed through aish)
     locations.push(
-      { path: '/etc/clshrc', priority: 'system' },
-      { path: path.join(os.homedir(), '.clshrc'), priority: 'user' },
-      { path: path.join(process.cwd(), '.clshrc'), priority: 'project' }
+      { path: '/etc/aishrc', priority: 'system' },
+      { path: path.join(os.homedir(), '.aishrc'), priority: 'user' },
+      { path: path.join(process.cwd(), '.aishrc'), priority: 'project' }
     );
 
     return locations;

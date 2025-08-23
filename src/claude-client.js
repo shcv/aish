@@ -409,7 +409,20 @@ Current directory: ${context.cwd}
 
 Request: ${context.query}
 
-IMPORTANT: Your final message must contain ONLY the shell command to execute. No explanations, no formatting, no additional text - just the raw command.`;
+IMPORTANT: Your final message must contain ONLY the shell command to execute. 
+- No explanations or additional text
+- No markdown formatting or code blocks
+- No backticks (\`) or language identifiers like "bash"
+- Just the raw shell command exactly as it should be executed
+
+Example:
+User: "list all python files"
+You: find . -name "*.py" -type f
+
+NOT this:
+\`\`\`bash
+find . -name "*.py" -type f
+\`\`\``;
       this.contextInitialized = true;
       this.lastCwd = context.cwd;
     } else {
@@ -419,7 +432,20 @@ IMPORTANT: Your final message must contain ONLY the shell command to execute. No
         prompt += `\nCurrent directory: ${context.cwd}`;
         this.lastCwd = context.cwd;
       }
-      prompt += `\n\nIMPORTANT: Your final message must contain ONLY the shell command to execute. No explanations, no formatting, no additional text - just the raw command.`;
+      prompt += `\n\nIMPORTANT: Your final message must contain ONLY the shell command to execute. 
+- No explanations or additional text
+- No markdown formatting or code blocks
+- No backticks (\`) or language identifiers like "bash"
+- Just the raw shell command exactly as it should be executed
+
+Example:
+User: "list all python files"
+You: find . -name "*.py" -type f
+
+NOT this:
+\`\`\`bash
+find . -name "*.py" -type f
+\`\`\``;
     }
 
     try {

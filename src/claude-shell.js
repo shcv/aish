@@ -8,6 +8,10 @@ import os from 'os';
 import fs from 'fs';
 import { ClaudeClient } from './claude-client.js';
 import { CommandParser } from './command-parser.js';
+import { EnhancedReadline } from './enhanced-readline.js';
+import { HistoryManager } from './history/manager.js';
+import { CompletionManager } from './completion/manager.js';
+import { FzfDetector } from './fuzzy/fzf-detector.js';
 
 export class ClaudeShell {
   constructor(config = {}) {
@@ -17,7 +21,7 @@ export class ClaudeShell {
     this.history = [];
     this.isRunning = true;
     
-    // History configuration
+    // History configuration (legacy support)
     this.historyEnabled = config.history?.enabled !== false;
     this.historyFile = this.expandPath(config.history?.file || path.join(os.homedir(), '.aish_history'));
     this.maxHistoryEntries = config.history?.max_entries || 10000;
@@ -25,6 +29,12 @@ export class ClaudeShell {
     // Components
     this.parser = new CommandParser(config);
     this.claude = new ClaudeClient(config);
+    
+    // New enhanced components
+    this.enhancedReadline = new EnhancedReadline(config);
+    this.historyManager = new HistoryManager(config);
+    this.completionManager = new CompletionManager(config);
+    this.useEnhancedReadline = config.completion?.enabled !== false;
     
     // Setup process handlers
     process.on('SIGINT', () => {
@@ -149,7 +159,37 @@ export class ClaudeShell {
   }
   
   async start() {
-    // Load history from file
+    // Detect and setup FZF
+    const fzfDetector = new FzfDetector(this.config);
+    const fzfInfo = await fzfDetector.detect();
+    
+    if (fzfInfo.available) {
+      // Add fzf bin directory to internal PATH
+      const fzfBinPath = fzfDetector.getFzfBinPath();
+      if (fzfBinPath && !process.env.PATH.includes(fzfBinPath)) {
+        process.env.PATH = `${fzfBinPath}:${process.env.PATH}`;
+        if (process.env.AISH_DEBUG) {
+          console.log(chalk.gray(`[DEBUG] Added ${fzfBinPath} to PATH`));
+        }
+      }
+      
+      // Store fzf info for use by completion/history managers
+      this.fzfPath = fzfInfo.path;
+      this.historyManager.setFzfPath(fzfInfo.path);
+      this.completionManager.setFzfPath(fzfInfo.path);
+      this.enhancedReadline.setFzfPath(fzfInfo.path);
+    } else {
+      if (process.env.AISH_DEBUG) {
+        console.log(chalk.gray('[DEBUG] FZF not available, using fallback fuzzy search'));
+      }
+    }
+    
+    // Initialize new managers
+    await this.historyManager.initialize();
+    await this.completionManager.initialize();
+    await this.enhancedReadline.initialize();
+    
+    // Load history from file (legacy support)
     await this.loadHistory();
     
     // Initialize Claude connection if AI is enabled
@@ -173,7 +213,13 @@ export class ClaudeShell {
           break;
         }
         
-        // Add to history (will save to file automatically)
+        // Add to history using new manager
+        await this.historyManager.add(trimmed, {
+          cwd: this.cwd,
+          timestamp: Date.now()
+        });
+        
+        // Also add to legacy history for compatibility
         await this.addToHistory(trimmed);
         
         // Parse and handle command
@@ -189,6 +235,17 @@ export class ClaudeShell {
   }
   
   async readInput() {
+    // Use enhanced readline if enabled
+    if (this.useEnhancedReadline) {
+      const prompt = this.getPrompt();
+      return this.enhancedReadline.readInput(prompt, {
+        history: this.historyEnabled ? [...this.history].reverse() : undefined,
+        historySize: this.maxHistoryEntries,
+        removeHistoryDuplicates: true
+      });
+    }
+    
+    // Fallback to standard readline
     return new Promise((resolve) => {
       const prompt = this.getPrompt();
       const rl = readline.createInterface({
