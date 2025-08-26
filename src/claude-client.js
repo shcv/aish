@@ -389,6 +389,10 @@ Question: ${context.query}`;
       const content = result != null ? String(result).trim() : '';
       return { content, toolUses: [], intermediateSteps: [] };
     } catch (error) {
+      // Check if the error is due to interruption
+      if (error.message === 'Operation interrupted') {
+        throw new Error('Operation cancelled');
+      }
       throw new Error('Failed to answer question: ' + error.message);
     }
   }
@@ -457,6 +461,10 @@ find . -name "*.py" -type f
       // Fallback for simple string responses
       return result != null ? String(result).trim() : '';
     } catch (error) {
+      // Check if the error is due to interruption
+      if (error.message === 'Operation interrupted') {
+        throw new Error('Operation cancelled');
+      }
       throw new Error('Failed to generate command: ' + error.message);
     }
   }
@@ -489,6 +497,10 @@ Provide the final command with all substitutions applied. Respond with ONLY the 
       
       return finalCommand;
     } catch (error) {
+      // Check if the error is due to interruption
+      if (error.message === 'Operation interrupted') {
+        throw new Error('Operation cancelled');
+      }
       throw new Error(`Failed to process substitutions: ${error.message}`);
     }
   }
@@ -516,7 +528,9 @@ Respond with ONLY the corrected command, or the same command if no correction is
       return suggestion !== context.command ? suggestion : null;
     } catch (error) {
       // Check if the error is due to interruption
-      if (error.message === 'Request timed out' || error.message === 'Connection closed') {
+      if (error.message === 'Request timed out' || 
+          error.message === 'Connection closed' ||
+          error.message === 'Operation interrupted') {
         // This is expected when interrupted
         return null;
       }
@@ -525,13 +539,27 @@ Respond with ONLY the corrected command, or the same command if no correction is
     }
   }
 
+  /**
+   * Interrupt any ongoing operations
+   */
+  interrupt() {
+    // Mark as disconnected temporarily to reject pending requests
+    const wasConnected = this.isConnected;
+    this.isConnected = false;
+    
+    // Clear all pending requests
+    for (const [id, request] of this.pendingRequests) {
+      request.reject(new Error('Operation interrupted'));
+    }
+    this.pendingRequests.clear();
+    
+    // Restore connection state if it was connected
+    this.isConnected = wasConnected;
+  }
+
   async disconnect() {
     this.isConnected = false;
     this.emit('messageQueued'); // Trigger the input stream to exit
-    
-    if (this.queryStream && this.queryStream.interrupt) {
-      await this.queryStream.interrupt();
-    }
     
     // Clear pending requests
     for (const [id, request] of this.pendingRequests) {

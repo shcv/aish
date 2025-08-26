@@ -11,9 +11,6 @@ export class EnhancedReadline {
     this.completionManager = new CompletionManager(config);
     this.rl = null;
     this.isHistorySearchMode = false;
-    this.lastCompletionPrefix = '';
-    this.lastCompletions = [];
-    this.showCompletionsOnNext = false;
     this.fzfPath = null;
   }
 
@@ -119,17 +116,13 @@ export class EnhancedReadline {
   }
 
   /**
-   * Tab completion handler - properly modifies the line
+   * Tab completion handler - follows readline docs format
    */
   async completer(line, callback) {
     try {
-      // Get cursor position
-      const cursor = this.rl ? this.rl.cursor : line.length;
+      // Parse the line to get the current word
+      const cursor = line.length; // In completer, line is up to cursor
       const parsed = this.parseCommandLine(line, cursor);
-      
-      // Check if this is a double-tab (same prefix as last time)
-      const isDoubleTab = (parsed.currentWord === this.lastCompletionPrefix) && 
-                         this.showCompletionsOnNext;
       
       const context = {
         cwd: process.cwd(),
@@ -138,92 +131,20 @@ export class EnhancedReadline {
         cursor,
         command: parsed.command,
         position: parsed.position,
-        isNewWord: parsed.isNewWord
+        isNewWord: parsed.isNewWord,
+        words: parsed.words
       };
 
       // Get completions for the current word
       const completions = await this.completionManager.getCompletions(parsed.currentWord, context);
       
-      // Store for double-tab detection
-      this.lastCompletionPrefix = parsed.currentWord;
-      this.lastCompletions = completions;
-      
-      if (completions.length === 0) {
-        // No completions
-        this.showCompletionsOnNext = false;
-        callback(null, [[], line]);
-        return;
-      }
-
       // Extract completion texts
       const completionTexts = completions.map(c => c.text);
       
-      // The readline completer expects us to return what replaces everything up to the cursor
-      const beforeCursor = line.substring(0, cursor);
-      const afterCursor = line.substring(cursor);
-      const beforeWord = beforeCursor.substring(0, beforeCursor.length - parsed.currentWord.length);
-      
-      if (completions.length === 1) {
-        // Single match - complete it fully
-        const completed = completions[0].text;
-        
-        // Add a space after if it's a complete match and not a directory
-        const addSpace = !completed.endsWith('/') && !completed.endsWith('=');
-        const completion = completed + (addSpace ? ' ' : '');
-        
-        // Build what should replace everything up to cursor
-        const replacement = beforeWord + completion;
-        
-        this.showCompletionsOnNext = false;
-        
-        // Update cursor position after completion
-        if (this.rl) {
-          // Set the new cursor position after the completion happens
-          process.nextTick(() => {
-            if (this.rl) {
-              this.rl.cursor = replacement.length;
-            }
-          });
-        }
-        
-        // Return the completions array and what replaces everything up to cursor
-        callback(null, [[completion], replacement]);
-      } else {
-        // Multiple matches
-        const commonPrefix = this.findCommonPrefix(completionTexts);
-        
-        if (commonPrefix.length > parsed.currentWord.length) {
-          // Can extend to common prefix
-          const replacement = beforeWord + commonPrefix;
-          
-          this.showCompletionsOnNext = true;
-          
-          // Update cursor position after completion
-          if (this.rl) {
-            process.nextTick(() => {
-              if (this.rl) {
-                this.rl.cursor = replacement.length;
-              }
-            });
-          }
-          
-          callback(null, [completionTexts, replacement]);
-        } else if (isDoubleTab || parsed.currentWord === commonPrefix) {
-          // Already at common prefix or double-tab - show completions
-          this.displayCompletions(completions);
-          this.showCompletionsOnNext = false;
-          // Don't modify the line when showing completions
-          callback(null, [[], line]);
-        } else {
-          // First tab with no common extension - show completions
-          this.displayCompletions(completions);
-          this.showCompletionsOnNext = false;
-          callback(null, [[], line]);
-        }
-      }
+      // Return [hits, originalsubstring] as per readline docs
+      callback(null, [completionTexts, parsed.currentWord]);
     } catch (error) {
-      console.error('Completion error:', error);
-      callback(null, [[], line]);
+      callback(null, [[], '']);
     }
   }
 
@@ -382,14 +303,7 @@ export class EnhancedReadline {
           self.exitHistorySearch();
           return;
         }
-        // Reset completion state
-        self.showCompletionsOnNext = false;
-        self.lastCompletionPrefix = '';
-      }
-      
-      // Reset completion state on any non-tab key
-      if (key && key.name !== 'tab') {
-        self.showCompletionsOnNext = false;
+        // Completion state is now handled by readline
       }
       
       // Call original handler

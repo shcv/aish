@@ -1,4 +1,5 @@
 import BashCompletionBackend from './backends/bash.js';
+import ZshCompletionBackend from './backends/zsh.js';
 import BaseCompletionBackend from './backends/base.js';
 import FuzzySearcherFactory from '../fuzzy/factory.js';
 import HistoryManager from '../history/manager.js';
@@ -34,20 +35,55 @@ export class CompletionManager {
     // Initialize history manager
     await this.historyManager.initialize();
 
-    // Detect and initialize appropriate backend
-    const shellPath = this.config.shell?.default || process.env.SHELL || '/bin/bash';
-    const shellName = shellPath.split('/').pop();
+    // Detect and initialize appropriate backend based on config
+    const backendType = this.config.completion?.backend;
 
-    if (shellName.includes('bash')) {
-      this.backend = new BashCompletionBackend(this.config);
+    if (backendType && backendType !== 'auto') {
+      // Use explicitly configured backend
+      switch (backendType) {
+        case 'bash':
+          this.backend = new BashCompletionBackend(this.config);
+          break;
+        case 'zsh':
+          this.backend = new ZshCompletionBackend(this.config);
+          break;
+        case 'base':
+        case 'generic':
+          this.backend = new BaseCompletionBackend(this.config);
+          break;
+        default:
+          console.warn(`Unknown completion backend: ${backendType}, falling back to auto-detection`);
+          this.backend = await this.autoDetectBackend();
+      }
     } else {
-      // Fallback to generic backend for other shells
-      // In a full implementation, we'd have ZshBackend, FishBackend, etc.
-      this.backend = new BaseCompletionBackend(this.config);
+      // Auto-detect based on configured shell
+      this.backend = await this.autoDetectBackend();
     }
 
     await this.backend.initialize();
     this.initialized = true;
+  }
+
+  /**
+   * Auto-detect the appropriate completion backend based on configured shell
+   */
+  async autoDetectBackend() {
+    // Use configured shell, fallback to SHELL env var, then to /bin/sh
+    const shellPath = this.config.shell?.default || process.env.SHELL || '/bin/sh';
+    const shellName = shellPath.split('/').pop();
+
+    // Check for shell type in the path (handles Guix-style paths)
+    if (shellPath.includes('zsh') || shellName === 'zsh') {
+      return new ZshCompletionBackend(this.config);
+    } else if (shellPath.includes('bash') || shellName === 'bash') {
+      return new BashCompletionBackend(this.config);
+    } else if (shellPath.includes('fish') || shellName === 'fish') {
+      // TODO: Implement FishCompletionBackend
+      return new BaseCompletionBackend(this.config);
+    } else {
+      // Default to base backend for unknown shells
+      return new BaseCompletionBackend(this.config);
+    }
   }
 
   /**

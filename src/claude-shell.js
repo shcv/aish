@@ -359,6 +359,18 @@ export class ClaudeShell {
     
     const spinner = this.createSpinner('Thinking...');
     
+    // Set up SIGINT handler for canceling the operation
+    let operationInterrupted = false;
+    const sigintHandler = () => {
+      operationInterrupted = true;
+      if (this.claude && this.claude.interrupt) {
+        this.claude.interrupt();
+      }
+      this.stopSpinner(spinner);
+      console.log(chalk.yellow('\nOperation cancelled'));
+    };
+    process.once('SIGINT', sigintHandler);
+
     try {
       const context = {
         query,
@@ -369,6 +381,9 @@ export class ClaudeShell {
       
       // Pass a callback to handle intermediate steps
       const onStep = (step) => {
+        // Don't process steps if interrupted
+        if (operationInterrupted) return;
+
         if (spinner) spinner.clear();  // Clear spinner before printing step
         
         // Display tool uses if present
@@ -391,11 +406,21 @@ export class ClaudeShell {
           }
         }
         
-        if (spinner) spinner.start();  // Restart spinner after printing
+        if (spinner && !operationInterrupted) spinner.start();  // Restart spinner after printing
       };
       
       const response = await this.claude.askQuestion(context, onStep);
+
+      // Remove the SIGINT handler if we completed normally
+      process.removeListener('SIGINT', sigintHandler);
+
       this.stopSpinner(spinner);
+
+      // If operation was interrupted, return early
+      if (operationInterrupted) {
+        return;
+      }
+
       if (process.env.AISH_DEBUG) {
         console.log(chalk.gray('[DEBUG] Response received'));
       }
@@ -411,8 +436,15 @@ export class ClaudeShell {
       
       console.log(chalk.cyan('Answer:'), content);
     } catch (error) {
+      // Remove the SIGINT handler on error
+      process.removeListener('SIGINT', sigintHandler);
+
       this.stopSpinner(spinner);
-      console.error(chalk.red('Failed to get answer:'), error.message);
+
+      // If it was interrupted, we already showed the message
+      if (!operationInterrupted) {
+        console.error(chalk.red('Failed to get answer:'), error.message);
+      }
     }
   }
   
@@ -424,6 +456,18 @@ export class ClaudeShell {
     
     const spinner = this.createSpinner('Generating command...');
     
+    // Set up SIGINT handler for canceling the operation
+    let operationInterrupted = false;
+    const sigintHandler = () => {
+      operationInterrupted = true;
+      if (this.claude && this.claude.interrupt) {
+        this.claude.interrupt();
+      }
+      this.stopSpinner(spinner);
+      console.log(chalk.yellow('\nOperation cancelled'));
+    };
+    process.once('SIGINT', sigintHandler);
+
     try {
       const context = {
         query,
@@ -434,8 +478,17 @@ export class ClaudeShell {
       };
       
       const suggestion = await this.claude.generateCommand(context);
+
+      // Remove the SIGINT handler if we completed normally
+      process.removeListener('SIGINT', sigintHandler);
+
       this.stopSpinner(spinner);
       
+      // If operation was interrupted, return early
+      if (operationInterrupted) {
+        return;
+      }
+
       console.log(chalk.cyan('Generated command:'));
       console.log(chalk.bold(suggestion));
       
@@ -458,8 +511,15 @@ export class ClaudeShell {
           break;
       }
     } catch (error) {
+      // Remove the SIGINT handler on error
+      process.removeListener('SIGINT', sigintHandler);
+
       this.stopSpinner(spinner);
-      console.error(chalk.red('Failed to generate command:'), error.message);
+
+      // If it was interrupted, we already showed the message
+      if (!operationInterrupted) {
+        console.error(chalk.red('Failed to generate command:'), error.message);
+      }
     }
   }
   
@@ -471,6 +531,18 @@ export class ClaudeShell {
     
     const spinner = this.createSpinner('Processing substitution...');
     
+    // Set up SIGINT handler for canceling the operation
+    let operationInterrupted = false;
+    const sigintHandler = () => {
+      operationInterrupted = true;
+      if (this.claude && this.claude.interrupt) {
+        this.claude.interrupt();
+      }
+      this.stopSpinner(spinner);
+      console.log(chalk.yellow('\nOperation cancelled'));
+    };
+    process.once('SIGINT', sigintHandler);
+
     try {
       const context = {
         command,
@@ -480,8 +552,17 @@ export class ClaudeShell {
       };
       
       const result = await this.claude.processSubstitution(context);
+
+      // Remove the SIGINT handler if we completed normally
+      process.removeListener('SIGINT', sigintHandler);
+
       this.stopSpinner(spinner);
       
+      // If operation was interrupted, return early
+      if (operationInterrupted) {
+        return;
+      }
+
       console.log(chalk.cyan('Suggested command:'));
       console.log(chalk.bold(result));
       
@@ -504,8 +585,15 @@ export class ClaudeShell {
           break;
       }
     } catch (error) {
+      // Remove the SIGINT handler on error
+      process.removeListener('SIGINT', sigintHandler);
+
       this.stopSpinner(spinner);
-      console.error(chalk.red('Failed to process substitution:'), error.message);
+
+      // If it was interrupted, we already showed the message
+      if (!operationInterrupted) {
+        console.error(chalk.red('Failed to process substitution:'), error.message);
+      }
     }
   }
   
@@ -555,8 +643,8 @@ export class ClaudeShell {
     let analysisInterrupted = false;
     const sigintHandler = () => {
       analysisInterrupted = true;
-      if (this.claude && this.claude.queryStream && this.claude.queryStream.interrupt) {
-        this.claude.queryStream.interrupt();
+      if (this.claude && this.claude.interrupt) {
+        this.claude.interrupt();
       }
       this.stopSpinner(spinner);
       console.log(chalk.yellow('\nAnalysis cancelled'));
