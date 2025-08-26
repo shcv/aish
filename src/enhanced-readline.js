@@ -28,7 +28,7 @@ export class EnhancedReadline {
   /**
    * Create an enhanced readline interface
    */
-  createInterface(options = {}) {
+  createInterface(_options = {}) {
     const enhancedOptions = {
       ...options,
       completer: this.config.completion?.enabled !== false 
@@ -94,7 +94,7 @@ export class EnhancedReadline {
         }
         current += char;
       } else {
-        if (char === '"' || char === "'") {
+        if (char === '"' || char === '\'') {
           inQuote = char;
           current += char;
         } else if (/\s/.test(char)) {
@@ -193,29 +193,29 @@ export class EnhancedReadline {
           
           // Truncate if too long
           if (item.text.length > columnWidth - 2) {
-            text = item.text.substring(0, columnWidth - 5) + '...' + '  ';
+            text = `${item.text.substring(0, columnWidth - 5)  }...` + '  ';
           }
           
           // Color based on type
           switch (item.type) {
-            case 'command':
-              return chalk.green(text);
-            case 'directory':
-              return chalk.blue(text);
-            case 'file':
-              return chalk.white(text);
-            case 'history':
-              return chalk.gray(text);
-            case 'option':
-              return chalk.yellow(text);
-            case 'variable':
-              return chalk.magenta(text);
-            default:
-              return text;
+          case 'command':
+            return chalk.green(text);
+          case 'directory':
+            return chalk.blue(text);
+          case 'file':
+            return chalk.white(text);
+          case 'history':
+            return chalk.gray(text);
+          case 'option':
+            return chalk.yellow(text);
+          case 'variable':
+            return chalk.magenta(text);
+          default:
+            return text;
           }
         });
         
-        console.log('  ' + formatted.join(''));
+        console.log(`  ${  formatted.join('')}`);
       }
     }
     
@@ -446,7 +446,7 @@ export class EnhancedReadline {
         if (index === selectedIndex) {
           console.log(chalk.green('→ ') + chalk.white(cmd));
         } else {
-          console.log('  ' + chalk.gray(cmd));
+          console.log(`  ${  chalk.gray(cmd)}`);
         }
       });
       
@@ -456,7 +456,7 @@ export class EnhancedReadline {
     };
     
     return new Promise((resolve) => {
-      searchRl.on('line', (input) => {
+      searchRl.on('line', (_input) => {
         // Select current match
         if (matches.length > selectedIndex) {
           const selected = matches[selectedIndex];

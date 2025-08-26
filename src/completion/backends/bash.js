@@ -27,7 +27,7 @@ export class BashCompletionBackend extends BaseCompletionBackend {
     await this.initialize();
     
     // Use parent implementation but add bash-specific enhancements
-    let completions = await super.getCompletionsForWord(word, context);
+    const completions = await super.getCompletionsForWord(word, context);
     
     // Add bash-specific completions using compgen if available
     if (this.compgenAvailable && context.isCommand) {
@@ -99,32 +99,32 @@ export class BashCompletionBackend extends BaseCompletionBackend {
   /**
    * Get command-specific completions
    */
-  async getCommandSpecificCompletions(command, partial, parsed) {
+  async getCommandSpecificCompletions(_command, _partial, _parsed) {
     const completions = [];
     
     // Special handling for common commands
     switch (command) {
-      case 'cd':
-      case 'pushd':
-        // Only directories for cd
-        return this.getCompgenCompletions('directory', partial);
+    case 'cd':
+    case 'pushd':
+      // Only directories for cd
+      return this.getCompgenCompletions('directory', partial);
         
-      case 'git':
-        return this.getGitCompletions(partial, parsed);
+    case 'git':
+      return this.getGitCompletions(partial, parsed);
         
-      case 'npm':
-        return this.getNpmCompletions(partial, parsed);
+    case 'npm':
+      return this.getNpmCompletions(partial, parsed);
         
-      case 'docker':
-        return this.getDockerCompletions(partial, parsed);
+    case 'docker':
+      return this.getDockerCompletions(partial, parsed);
         
-      case 'kill':
-        return this.getProcessCompletions(partial);
+    case 'kill':
+      return this.getProcessCompletions(partial);
         
-      case 'ssh':
-      case 'scp':
-      case 'rsync':
-        return this.getHostnameCompletions(partial);
+    case 'ssh':
+    case 'scp':
+    case 'rsync':
+      return this.getHostnameCompletions(partial);
     }
     
     // Try to get completions using bash completion if available
@@ -139,7 +139,7 @@ export class BashCompletionBackend extends BaseCompletionBackend {
   /**
    * Get completions using bash-completion if available
    */
-  async getBashCompletions(command, partial, parsed) {
+  async getBashCompletions(_command, _partial, _parsed) {
     // This is complex as it requires sourcing bash-completion
     // For now, return empty array
     // In a full implementation, this would:

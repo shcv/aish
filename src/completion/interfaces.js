@@ -21,7 +21,7 @@ export class CompletionProvider {
    * @param {Array<string>} context.history - Recent command history
    * @returns {Promise<Array<CompletionItem>>} Array of completion items
    */
-  async getCompletions(partial, context) {
+  async getCompletions(_partial, _context) {
     throw new Error('getCompletions must be implemented by subclass');
   }
 
@@ -72,7 +72,7 @@ export class HistoryProvider {
    * @param {number} limit - Maximum results to return
    * @returns {Promise<Array<HistoryItem>>} Matching history items
    */
-  async search(query, limit = this.maxResults) {
+  async search(_query, _limit = this.maxResults) {
     throw new Error('search must be implemented by subclass');
   }
 
@@ -82,7 +82,7 @@ export class HistoryProvider {
    * @param {Object} metadata - Optional metadata
    * @returns {Promise<void>}
    */
-  async add(command, metadata = {}) {
+  async add(_command, _metadata = {}) {
     throw new Error('add must be implemented by subclass');
   }
 
@@ -91,7 +91,7 @@ export class HistoryProvider {
    * @param {number} limit - Maximum results to return
    * @returns {Promise<Array<HistoryItem>>} Recent history items
    */
-  async getRecent(limit = 10) {
+  async getRecent(_limit = 10) {
     throw new Error('getRecent must be implemented by subclass');
   }
 
@@ -130,7 +130,7 @@ export class FuzzySearcher {
    * @param {number} options.threshold - Match threshold (0-1)
    * @returns {Promise<Array<SearchResult>>} Ranked search results
    */
-  async search(items, query, options = {}) {
+  async search(_items, _query, _options = {}) {
     throw new Error('search must be implemented by subclass');
   }
 
@@ -148,7 +148,7 @@ export class FuzzySearcher {
    * @param {Object} options - Interactive options
    * @returns {Promise<string|Object|null>} Selected item or null if cancelled
    */
-  async interactiveSearch(items, options = {}) {
+  async interactiveSearch(_items, _options = {}) {
     throw new Error('interactiveSearch not supported');
   }
 }

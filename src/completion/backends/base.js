@@ -50,14 +50,14 @@ export class BaseCompletionBackend extends CompletionProvider {
   /**
    * Get command-specific completions (override in subclasses)
    */
-  async getCommandSpecificCompletions(command, word, context) {
+  async getCommandSpecificCompletions(_command, _word, _context) {
     return [];
   }
 
   /**
    * Get option completions for a command (override in subclasses)
    */
-  async getOptionCompletions(command, word) {
+  async getOptionCompletions(_command, _word) {
     return [];
   }
 
@@ -148,7 +148,7 @@ export class BaseCompletionBackend extends CompletionProvider {
         }
         current += char;
       } else {
-        if (char === '"' || char === "'") {
+        if (char === '"' || char === '\'') {
           inQuote = char;
           current += char;
         } else if (char === ' ' || char === '\t') {
@@ -191,7 +191,7 @@ export class BaseCompletionBackend extends CompletionProvider {
             : entry.name;
           
           completions.push({
-            text: entry.isDirectory() ? relativePath + '/' : relativePath,
+            text: entry.isDirectory() ? `${relativePath  }/` : relativePath,
             display: entry.name,
             description: entry.isDirectory() ? 'directory' : 'file',
             type: entry.isDirectory() ? 'directory' : 'file',
@@ -280,8 +280,8 @@ export class BaseCompletionBackend extends CompletionProvider {
     for (const [name, value] of Object.entries(process.env)) {
       if (name.startsWith(prefix)) {
         completions.push({
-          text: '$' + name,
-          display: '$' + name,
+          text: `$${  name}`,
+          display: `$${  name}`,
           description: value.substring(0, 50) + (value.length > 50 ? '...' : ''),
           type: 'variable',
           priority: 3,

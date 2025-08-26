@@ -60,7 +60,7 @@ export class FishHistoryProvider extends HistoryProvider {
         // Start new entry
         const command = line.substring(7); // Remove '- cmd: '
         currentEntry = {
-          command: command,
+          command,
           timestamp: null,
           paths: [],
           metadata: { source: 'fish' }
@@ -81,7 +81,7 @@ export class FishHistoryProvider extends HistoryProvider {
         currentEntry.paths.push(pathStr);
       } else if (line.startsWith('  ') && inCommand && currentEntry) {
         // Continuation of multi-line command
-        currentEntry.command += '\n' + line.substring(2);
+        currentEntry.command += `\n${  line.substring(2)}`;
       }
     }
 

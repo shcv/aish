@@ -88,7 +88,7 @@ export class FzfNativeSearcher extends FuzzySearcher {
       args.push('--bind', b);
     }
 
-    return new Promise((resolve, reject) => {
+    return new Promise((resolve, _reject) => {
       // fzf needs access to /dev/tty for interactive mode
       // stdin: pipe (for sending the list)
       // stdout: pipe (for getting the selection)  
@@ -98,7 +98,7 @@ export class FzfNativeSearcher extends FuzzySearcher {
       });
 
       let output = '';
-      let error = '';
+      const _error = '';
 
       // Write items to stdin
       const input = Array.isArray(items) ? items.join('\n') : items;
@@ -110,7 +110,7 @@ export class FzfNativeSearcher extends FuzzySearcher {
       });
 
       fzf.on('error', (err) => {
-        reject(err);
+        _reject(err);
       });
 
       fzf.on('exit', (code) => {
@@ -151,7 +151,7 @@ export class FzfNativeSearcher extends FuzzySearcher {
     // Include line numbers for selection
     const formattedItems = historyItems.map((item, index) => {
       const num = (historyItems.length - index).toString().padStart(5);
-      const timestamp = item.timestamp 
+      const _timestamp = item.timestamp 
         ? new Date(item.timestamp).toLocaleString() 
         : '';
       // Format: "number  command"
@@ -248,7 +248,7 @@ export class FzfNativeSearcher extends FuzzySearcher {
     // Use find command to get directories
     const findCmd = `find ${basePath} -type d -not -path '*/\\.*' 2>/dev/null | head -1000`;
     
-    return new Promise((resolve, reject) => {
+    return new Promise((resolve, _reject) => {
       const find = spawn('sh', ['-c', findCmd], {
         stdio: ['ignore', 'pipe', 'ignore']
       });
@@ -258,7 +258,7 @@ export class FzfNativeSearcher extends FuzzySearcher {
         dirs += data.toString();
       });
 
-      find.on('exit', async () => {
+      find.on('exit', async() => {
         const selected = await this.runFzf(dirs, {
           prompt: 'Directory> ',
           height: '40%',
@@ -283,9 +283,9 @@ export class FzfNativeSearcher extends FuzzySearcher {
     // Use fd if available, otherwise find
     const searchCmd = pattern 
       ? `(fd ${pattern} 2>/dev/null || find . -name "*${pattern}*" 2>/dev/null) | head -1000`
-      : `(fd . 2>/dev/null || find . -type f 2>/dev/null) | head -1000`;
+      : '(fd . 2>/dev/null || find . -type f 2>/dev/null) | head -1000';
     
-    return new Promise((resolve, reject) => {
+    return new Promise((resolve, _reject) => {
       const search = spawn('sh', ['-c', searchCmd], {
         stdio: ['ignore', 'pipe', 'ignore']
       });
@@ -295,7 +295,7 @@ export class FzfNativeSearcher extends FuzzySearcher {
         files += data.toString();
       });
 
-      search.on('exit', async () => {
+      search.on('exit', async() => {
         const selected = await this.runFzf(files, {
           prompt: 'File> ',
           height: '40%',

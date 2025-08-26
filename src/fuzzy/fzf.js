@@ -31,7 +31,7 @@ export class FzfSearcher extends FuzzySearcher {
         stdio: ['ignore', 'ignore', 'ignore']
       });
 
-      proc.on('error', (err) => {
+      proc.on('error', (_err) => {
         // fzf not found or not executable
         this.available = false;
         resolve(false);

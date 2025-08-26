@@ -41,19 +41,19 @@ export class CompletionManager {
     if (backendType && backendType !== 'auto') {
       // Use explicitly configured backend
       switch (backendType) {
-        case 'bash':
-          this.backend = new BashCompletionBackend(this.config);
-          break;
-        case 'zsh':
-          this.backend = new ZshCompletionBackend(this.config);
-          break;
-        case 'base':
-        case 'generic':
-          this.backend = new BaseCompletionBackend(this.config);
-          break;
-        default:
-          console.warn(`Unknown completion backend: ${backendType}, falling back to auto-detection`);
-          this.backend = await this.autoDetectBackend();
+      case 'bash':
+        this.backend = new BashCompletionBackend(this.config);
+        break;
+      case 'zsh':
+        this.backend = new ZshCompletionBackend(this.config);
+        break;
+      case 'base':
+      case 'generic':
+        this.backend = new BaseCompletionBackend(this.config);
+        break;
+      default:
+        console.warn(`Unknown completion backend: ${backendType}, falling back to auto-detection`);
+        this.backend = await this.autoDetectBackend();
       }
     } else {
       // Auto-detect based on configured shell
@@ -142,7 +142,7 @@ export class CompletionManager {
   /**
    * Get completions from command history
    */
-  async getHistoryCompletions(input, context) {
+  async getHistoryCompletions(input, _context) {
     const historyItems = await this.historyManager.search(input, { limit: 20 });
     
     return historyItems.map((item, index) => ({

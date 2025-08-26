@@ -41,7 +41,7 @@ export class BashHistoryProvider extends HistoryProvider {
       
       this.history = [];
       let currentCommand = '';
-      let isMultiline = false;
+      let _isMultiline = false;
 
       for (const line of lines) {
         // Handle HISTTIMEFORMAT (lines starting with #timestamp)
@@ -52,7 +52,7 @@ export class BashHistoryProvider extends HistoryProvider {
 
         // Handle multi-line commands (lines ending with \)
         if (line.endsWith('\\')) {
-          currentCommand += line.slice(0, -1) + '\n';
+          currentCommand += `${line.slice(0, -1)  }\n`;
           isMultiline = true;
         } else {
           currentCommand += line;
@@ -69,7 +69,7 @@ export class BashHistoryProvider extends HistoryProvider {
           }
           
           currentCommand = '';
-          isMultiline = false;
+          _isMultiline = false;
         }
       }
 

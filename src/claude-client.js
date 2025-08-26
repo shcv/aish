@@ -116,13 +116,13 @@ export class ClaudeClient extends EventEmitter {
                     detail = `Read: ${t.input.file_path}`;
                   } else if (name === 'Grep' && t.input.pattern) {
                     const pattern = t.input.pattern.length > 30 ? 
-                      t.input.pattern.substring(0, 27) + '...' : t.input.pattern;
+                      `${t.input.pattern.substring(0, 27)}...` : t.input.pattern;
                     detail = `Grep: "${pattern}"`;
                   } else if (name === 'Edit' && t.input.file_path) {
                     detail = `Edit: ${t.input.file_path}`;
                   } else if (name === 'Bash' && t.input.command) {
                     const cmd = t.input.command.length > 30 ? 
-                      t.input.command.substring(0, 27) + '...' : t.input.command;
+                      `${t.input.command.substring(0, 27)}...` : t.input.command;
                     detail = `Bash: ${cmd}`;
                   } else if (name === 'WebSearch' && t.input.query) {
                     detail = `WebSearch: "${t.input.query}"`;
@@ -162,7 +162,7 @@ export class ClaudeClient extends EventEmitter {
           // Store this as an intermediate step if stop_reason is null
           if (message.message.stop_reason === null) {
             const step = {
-              content: content,
+              content,
               toolUses: thisMessageToolUses  // Use the tools from THIS message only
             };
             currentResponse.intermediateSteps.push(step);
@@ -225,7 +225,7 @@ export class ClaudeClient extends EventEmitter {
             const request = this.pendingRequests.get(currentResponse.requestId);
             if (request) {
               if (process.env.AISH_DEBUG) {
-                console.log(chalk.gray(`[DEBUG] Resolving with accumulated content on result message`));
+                console.log(chalk.gray('[DEBUG] Resolving with accumulated content on result message'));
                 console.log(chalk.gray(`[DEBUG] Final accumulated content: ${currentResponse.content?.substring(0, 100)}...`));
               }
               
@@ -290,11 +290,11 @@ export class ClaudeClient extends EventEmitter {
     return '';
   }
 
-  findRequestForResponse(content) {
+  findRequestForResponse(_content) {
     // Simple heuristic: return the oldest pending request
     // In a more sophisticated implementation, you might match based on content
-    for (const [id, request] of this.pendingRequests) {
-      return id;
+    for (const [_id, _request] of this.pendingRequests) {
+      return _id;
     }
     return null;
   }
@@ -320,7 +320,7 @@ export class ClaudeClient extends EventEmitter {
       // Set a timeout
       const timeoutMs = this.config.ai?.timeout_seconds * 1000 || 60000;
       if (process.env.AISH_DEBUG) {
-        console.log(chalk.gray(`[DEBUG] Setting timeout to ${timeoutMs}ms (${timeoutMs/1000}s)`));
+        console.log(chalk.gray(`[DEBUG] Setting timeout to ${timeoutMs}ms (${timeoutMs / 1000}s)`));
       }
       setTimeout(() => {
         if (this.pendingRequests.has(requestId)) {
@@ -393,7 +393,7 @@ Question: ${context.query}`;
       if (error.message === 'Operation interrupted') {
         throw new Error('Operation cancelled');
       }
-      throw new Error('Failed to answer question: ' + error.message);
+      throw new Error(`Failed to answer question: ${error.message}`);
     }
   }
 
@@ -465,7 +465,7 @@ find . -name "*.py" -type f
       if (error.message === 'Operation interrupted') {
         throw new Error('Operation cancelled');
       }
-      throw new Error('Failed to generate command: ' + error.message);
+      throw new Error(`Failed to generate command: ${error.message}`);
     }
   }
 
@@ -548,8 +548,8 @@ Respond with ONLY the corrected command, or the same command if no correction is
     this.isConnected = false;
     
     // Clear all pending requests
-    for (const [id, request] of this.pendingRequests) {
-      request.reject(new Error('Operation interrupted'));
+    for (const [_id, _request] of this.pendingRequests) {
+      _request.reject(new Error('Operation interrupted'));
     }
     this.pendingRequests.clear();
     
@@ -562,8 +562,8 @@ Respond with ONLY the corrected command, or the same command if no correction is
     this.emit('messageQueued'); // Trigger the input stream to exit
     
     // Clear pending requests
-    for (const [id, request] of this.pendingRequests) {
-      request.reject(new Error('Connection closed'));
+    for (const [_id, _request] of this.pendingRequests) {
+      _request.reject(new Error('Connection closed'));
     }
     this.pendingRequests.clear();
     

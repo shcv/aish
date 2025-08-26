@@ -333,21 +333,21 @@ export class ClaudeShell {
   
   async handleCommand(parsed, originalInput) {
     switch (parsed.type) {
-      case 'ai_question':
-        await this.handleAIQuestion(parsed.query);
-        break;
+    case 'ai_question':
+      await this.handleAIQuestion(parsed.query);
+      break;
 
-      case 'natural_language':
-        await this.handleNaturalLanguage(parsed.query);
-        break;
+    case 'natural_language':
+      await this.handleNaturalLanguage(parsed.query);
+      break;
 
-      case 'substitution':
-        await this.handleSubstitution(parsed.command, parsed.substitutions);
-        break;
+    case 'substitution':
+      await this.handleSubstitution(parsed.command, parsed.substitutions);
+      break;
 
-      case 'regular':
-        await this.executeCommand(originalInput);
-        break;
+    case 'regular':
+      await this.executeCommand(originalInput);
+      break;
     }
   }
   
@@ -397,12 +397,12 @@ export class ClaudeShell {
         if (step.content && step.content.trim()) {
           if (process.env.AISH_VERBOSE) {
             // Verbose mode: show full content
-            console.log(chalk.gray('[Thinking] ' + step.content));
+            console.log(chalk.gray(`[Thinking] ${  step.content}`));
           } else {
             // Normal mode: show abbreviated content
             const abbreviated = step.content.length > 80 ? 
-              step.content.substring(0, 77) + '...' : step.content;
-            console.log(chalk.gray('[Thinking] ' + abbreviated));
+              `${step.content.substring(0, 77)  }...` : step.content;
+            console.log(chalk.gray(`[Thinking] ${  abbreviated}`));
           }
         }
         
@@ -494,21 +494,21 @@ export class ClaudeShell {
       
       const action = await this.promptAction('Execute this command?');
       
-      switch(action) {
-        case 'yes':
-          await this.addToHistory(suggestion);
-          await this.executeCommand(suggestion);
-          break;
-        case 'edit':
-          const edited = await this.readEditInput(suggestion);
-          if (edited && edited.trim()) {
-            await this.addToHistory(edited.trim());
-            await this.executeCommand(edited.trim());
-          }
-          break;
-        case 'no':
-          // Do nothing
-          break;
+      switch (action) {
+      case 'yes':
+        await this.addToHistory(suggestion);
+        await this.executeCommand(suggestion);
+        break;
+      case 'edit':
+        const edited = await this.readEditInput(suggestion);
+        if (edited && edited.trim()) {
+          await this.addToHistory(edited.trim());
+          await this.executeCommand(edited.trim());
+        }
+        break;
+      case 'no':
+        // Do nothing
+        break;
       }
     } catch (error) {
       // Remove the SIGINT handler on error
@@ -568,21 +568,21 @@ export class ClaudeShell {
       
       const action = await this.promptAction('Execute this command?');
       
-      switch(action) {
-        case 'yes':
-          await this.addToHistory(result);
-          await this.executeCommand(result);
-          break;
-        case 'edit':
-          const edited = await this.readEditInput(result);
-          if (edited && edited.trim()) {
-            await this.addToHistory(edited.trim());
-            await this.executeCommand(edited.trim());
-          }
-          break;
-        case 'no':
-          // Do nothing
-          break;
+      switch (action) {
+      case 'yes':
+        await this.addToHistory(result);
+        await this.executeCommand(result);
+        break;
+      case 'edit':
+        const edited = await this.readEditInput(result);
+        if (edited && edited.trim()) {
+          await this.addToHistory(edited.trim());
+          await this.executeCommand(edited.trim());
+        }
+        break;
+      case 'no':
+        // Do nothing
+        break;
       }
     } catch (error) {
       // Remove the SIGINT handler on error
@@ -678,21 +678,21 @@ export class ClaudeShell {
         
         const action = await this.promptAction('Run corrected command?');
         
-        switch(action) {
-          case 'yes':
-            await this.addToHistory(suggestion);
-            await this.executeCommand(suggestion);
-            break;
-          case 'edit':
-            const edited = await this.readEditInput(suggestion);
-            if (edited && edited.trim()) {
-              await this.addToHistory(edited.trim());
-              await this.executeCommand(edited.trim());
-            }
-            break;
-          case 'no':
-            // Do nothing
-            break;
+        switch (action) {
+        case 'yes':
+          await this.addToHistory(suggestion);
+          await this.executeCommand(suggestion);
+          break;
+        case 'edit':
+          const edited = await this.readEditInput(suggestion);
+          if (edited && edited.trim()) {
+            await this.addToHistory(edited.trim());
+            await this.executeCommand(edited.trim());
+          }
+          break;
+        case 'no':
+          // Do nothing
+          break;
         }
       }
     } catch (error) {

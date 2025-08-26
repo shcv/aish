@@ -50,7 +50,7 @@ export class ZshHistoryProvider extends HistoryProvider {
     return filePath;
   }
 
-  parseZshHistoryLine(line, previousLine = '') {
+  parseZshHistoryLine(line, _previousLine = '') {
     // Zsh extended history format: `: timestamp:duration;command`
     // Example: `: 1635360000:0;echo hello`
     // Also handle simple format without metadata
@@ -87,7 +87,7 @@ export class ZshHistoryProvider extends HistoryProvider {
       
       this.history = [];
       let currentEntry = null;
-      let inMultiline = false;
+      let _inMultiline = false;
 
       for (let i = 0; i < lines.length; i++) {
         const line = lines[i];
@@ -101,11 +101,11 @@ export class ZshHistoryProvider extends HistoryProvider {
           
           // Parse new entry
           currentEntry = this.parseZshHistoryLine(line);
-          inMultiline = false;
+          _inMultiline = false;
         } else if (currentEntry && !line.startsWith(': ')) {
           // This is a continuation of a multiline command
-          currentEntry.command += '\n' + line;
-          inMultiline = true;
+          currentEntry.command += `\n${  line}`;
+          _inMultiline = true;
         } else if (line.trim() && !line.startsWith(': ')) {
           // Simple format without metadata
           if (currentEntry && currentEntry.command.trim()) {
@@ -246,12 +246,12 @@ export class ZshHistoryProvider extends HistoryProvider {
       }
       await fs.access(this.historyFile, fs.constants.R_OK);
       if (process.env.AISH_DEBUG) {
-        console.log(`[DEBUG] Zsh history file exists and is readable`);
+        console.log('[DEBUG] Zsh history file exists and is readable');
       }
       return true;
     } catch (error) {
       if (process.env.AISH_DEBUG) {
-        console.log(`[DEBUG] Zsh history file not accessible:`, error.message);
+        console.log('[DEBUG] Zsh history file not accessible:', error.message);
       }
       return false;
     }

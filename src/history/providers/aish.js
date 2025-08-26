@@ -127,7 +127,7 @@ export class AishHistoryProvider extends HistoryProvider {
       clearTimeout(this.saveDebounceTimer);
     }
     
-    this.saveDebounceTimer = setTimeout(async () => {
+    this.saveDebounceTimer = setTimeout(async() => {
       await this.saveHistory();
       this.saveDebounceTimer = null;
     }, 1000);
@@ -248,29 +248,29 @@ export class AishHistoryProvider extends HistoryProvider {
     await this.loadHistory();
 
     switch (format) {
-      case 'json':
-        return JSON.stringify(this.history, null, 2);
+    case 'json':
+      return JSON.stringify(this.history, null, 2);
       
-      case 'plain':
-        return this.history.map(h => h.command).join('\n');
+    case 'plain':
+      return this.history.map(h => h.command).join('\n');
       
-      case 'bash':
-        // Export in bash history format
-        return this.history.map(h => h.command).join('\n');
+    case 'bash':
+      // Export in bash history format
+      return this.history.map(h => h.command).join('\n');
       
-      case 'zsh':
-        // Export in zsh extended history format
-        return this.history.map(h => {
-          if (h.timestamp) {
-            const ts = Math.floor(h.timestamp / 1000);
-            const duration = h.duration ? Math.floor(h.duration / 1000) : 0;
-            return `: ${ts}:${duration};${h.command}`;
-          }
-          return h.command;
-        }).join('\n');
+    case 'zsh':
+      // Export in zsh extended history format
+      return this.history.map(h => {
+        if (h.timestamp) {
+          const ts = Math.floor(h.timestamp / 1000);
+          const duration = h.duration ? Math.floor(h.duration / 1000) : 0;
+          return `: ${ts}:${duration};${h.command}`;
+        }
+        return h.command;
+      }).join('\n');
       
-      default:
-        throw new Error(`Unsupported export format: ${format}`);
+    default:
+      throw new Error(`Unsupported export format: ${format}`);
     }
   }
 

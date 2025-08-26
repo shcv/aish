@@ -554,18 +554,18 @@ function extractObjectDefaults(properties) {
 
 function validateType(value, schema) {
   switch (schema.type) {
-    case 'string':
-      return typeof value === 'string';
-    case 'number':
-      return typeof value === 'number' && !isNaN(value);
-    case 'boolean':
-      return typeof value === 'boolean';
-    case 'array':
-      return Array.isArray(value);
-    case 'object':
-      return value !== null && typeof value === 'object' && !Array.isArray(value);
-    default:
-      return true;
+  case 'string':
+    return typeof value === 'string';
+  case 'number':
+    return typeof value === 'number' && !isNaN(value);
+  case 'boolean':
+    return typeof value === 'boolean';
+  case 'array':
+    return Array.isArray(value);
+  case 'object':
+    return value !== null && typeof value === 'object' && !Array.isArray(value);
+  default:
+    return true;
   }
 }
 

@@ -104,13 +104,13 @@ export class HistoryManager {
       // Merge results from all providers
       const promises = [];
       
-      for (const [name, provider] of this.providers) {
+      for (const [_name, provider] of this.providers) {
         promises.push(provider.search(query, { limit, deduplicate }));
       }
       
       const allResults = await Promise.all(promises);
       if (process.env.AISH_DEBUG) {
-        console.log(`[DEBUG] Search results from providers:`, allResults.map(r => r.length));
+        console.log('[DEBUG] Search results from providers:', allResults.map(r => r.length));
       }
       results = this.mergeResults(allResults, { deduplicate, limit });
       if (process.env.AISH_DEBUG) {
@@ -190,7 +190,7 @@ export class HistoryManager {
 
     if (this.mode === 'unified') {
       const promises = [];
-      for (const [name, provider] of this.providers) {
+      for (const [_name, provider] of this.providers) {
         promises.push(provider.getRecent(Math.ceil(limit / this.providers.size)));
       }
       const allResults = await Promise.all(promises);
@@ -280,12 +280,12 @@ export class HistoryManager {
     const history = await provider.getAll();
     
     switch (format) {
-      case 'json':
-        return JSON.stringify(history, null, 2);
-      case 'plain':
-        return history.map(h => h.command).join('\n');
-      default:
-        throw new Error(`Unsupported export format: ${format}`);
+    case 'json':
+      return JSON.stringify(history, null, 2);
+    case 'plain':
+      return history.map(h => h.command).join('\n');
+    default:
+      throw new Error(`Unsupported export format: ${format}`);
     }
   }
 }

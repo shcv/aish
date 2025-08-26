@@ -102,9 +102,9 @@ export class ConfigUpdater {
     // On first run or if not set, ask the user
     if (isFirstRun || !config._meta) {
       console.log(chalk.yellow('How would you like to handle configuration updates?\n'));
-      console.log('  ' + chalk.green('interactive') + ' - Ask me about new configuration options');
-      console.log('  ' + chalk.blue('auto') + ' - Automatically use defaults for new options');
-      console.log('  ' + chalk.gray('never') + ' - Don\'t update configuration\n');
+      console.log(`  ${  chalk.green('interactive')  } - Ask me about new configuration options`);
+      console.log(`  ${  chalk.blue('auto')  } - Automatically use defaults for new options`);
+      console.log(`  ${  chalk.gray('never')  } - Don't update configuration\n`);
       
       const response = await prompts({
         type: 'select',
@@ -257,7 +257,7 @@ export class ConfigUpdater {
     const pathStr = path.join('.');
     
     // Build the prompt based on type
-    let promptConfig = {
+    const promptConfig = {
       name: 'value',
       message: `${prompt || pathStr}`
     };

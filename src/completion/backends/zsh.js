@@ -139,27 +139,27 @@ export class ZshCompletionBackend extends BaseCompletionBackend {
     
     // Special handling for common commands
     switch (command) {
-      case 'cd':
-      case 'pushd':
-        // Only directories for cd
-        return this.getDirectoryCompletions(partial);
+    case 'cd':
+    case 'pushd':
+      // Only directories for cd
+      return this.getDirectoryCompletions(partial);
         
-      case 'git':
-        return this.getGitCompletions(partial, context);
+    case 'git':
+      return this.getGitCompletions(partial, context);
         
-      case 'npm':
-        return this.getNpmCompletions(partial, context);
+    case 'npm':
+      return this.getNpmCompletions(partial, context);
         
-      case 'docker':
-        return this.getDockerCompletions(partial, context);
+    case 'docker':
+      return this.getDockerCompletions(partial, context);
         
-      case 'kill':
-        return this.getProcessCompletions(partial);
+    case 'kill':
+      return this.getProcessCompletions(partial);
         
-      case 'ssh':
-      case 'scp':
-      case 'rsync':
-        return this.getHostnameCompletions(partial);
+    case 'ssh':
+    case 'scp':
+    case 'rsync':
+      return this.getHostnameCompletions(partial);
     }
     
     return completions;

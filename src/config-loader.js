@@ -235,24 +235,24 @@ export class ConfigLoader {
       } else {
         // Parse based on extension
         switch (ext) {
-          case '.yaml':
-          case '.yml':
-            await this.loadYamlFile(filePath, priority);
-            loaded = true;
-            break;
-          case '.json':
-            await this.loadJsonFile(filePath, priority);
-            loaded = true;
-            break;
-          case '.js':
-          case '.mjs':
-            await this.loadJsFile(filePath, priority);
-            loaded = true;
-            break;
-          case '.env':
-            await this.loadEnvFile(filePath, priority);
-            loaded = true;
-            break;
+        case '.yaml':
+        case '.yml':
+          await this.loadYamlFile(filePath, priority);
+          loaded = true;
+          break;
+        case '.json':
+          await this.loadJsonFile(filePath, priority);
+          loaded = true;
+          break;
+        case '.js':
+        case '.mjs':
+          await this.loadJsFile(filePath, priority);
+          loaded = true;
+          break;
+        case '.env':
+          await this.loadEnvFile(filePath, priority);
+          loaded = true;
+          break;
         }
       }
 
@@ -266,26 +266,26 @@ export class ConfigLoader {
     }
   }
 
-  async loadYamlFile(filePath, priority) {
+  async loadYamlFile(filePath, _priority) {
     const content = await fs.readFile(filePath, 'utf8');
     const data = yaml.load(content);
     this.mergeConfig(data);
   }
 
-  async loadJsonFile(filePath, priority) {
+  async loadJsonFile(filePath, _priority) {
     const content = await fs.readFile(filePath, 'utf8');
     const data = JSON.parse(content);
     this.mergeConfig(data);
   }
 
-  async loadJsFile(filePath, priority) {
+  async loadJsFile(filePath, _priority) {
     // Dynamic import of JS config
     const module = await import(filePath);
     const data = module.default || module.config || module;
     this.mergeConfig(data);
   }
 
-  async loadEnvFile(filePath, priority) {
+  async loadEnvFile(filePath, _priority) {
     const content = await fs.readFile(filePath, 'utf8');
     const lines = content.split('\n');
     
@@ -303,7 +303,7 @@ export class ConfigLoader {
     }
   }
 
-  async executeRcFile(filePath, priority) {
+  async executeRcFile(filePath, _priority) {
     // Check for shebang to determine shell
     let shellToUse = this.config.shell.default;
     

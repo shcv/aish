@@ -1,13 +1,13 @@
-import fs from 'fs/promises';
-import path from 'path';
-import os from 'os';
-import yaml from 'js-yaml';
-import { xdgConfig } from 'xdg-basedir';
+import _fs from 'fs/promises';
+import _path from 'path';
+import _os from 'os';
+import _yaml from 'js-yaml';
+import { _xdgConfig } from 'xdg-basedir';
 import chalk from 'chalk';
 import { ConfigLoader } from './config-loader.js';
 import { ConfigUpdater } from './config-updater.js';
 
-const EXAMPLE_CONFIG = `# aish Configuration File
+const _EXAMPLE_CONFIG = `# aish Configuration File
 # Location: ~/.config/aish/config.yaml
 
 # Shell configuration

@@ -10,7 +10,8 @@
   "scripts": {
     "start": "node src/index.js",
     "test": "node --test",
-    "lint": "eslint src/"
+    "lint": "eslint src/",
+    "prepare": "husky"
   },
   "keywords": [
     "shell",
@@ -44,7 +45,10 @@
     "xdg-basedir": "^5.1.0"
   },
   "devDependencies": {
-    "eslint": "^8.56.0"
+    "@eslint/js": "^9.34.0",
+    "eslint": "^8.56.0",
+    "globals": "^16.3.0",
+    "husky": "^9.1.7"
   },
   "engines": {
     "node": ">=18.0.0"

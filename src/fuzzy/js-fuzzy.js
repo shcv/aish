@@ -27,7 +27,7 @@ export class JSFuzzySearcher extends FuzzySearcher {
 
     // Fuzzy matching algorithm
     let score = 0;
-    let matches = [];
+    const matches = [];
     let queryIndex = 0;
     let targetIndex = 0;
     let matchStart = -1;

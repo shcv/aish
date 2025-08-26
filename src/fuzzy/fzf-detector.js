@@ -5,7 +5,7 @@ import os from 'os';
 import chalk from 'chalk';
 import prompts from 'prompts';
 import https from 'https';
-import { pipeline } from 'stream/promises';
+import { pipeline as _pipeline } from 'stream/promises';
 import { createWriteStream } from 'fs';
 import { exec } from 'child_process';
 import { promisify } from 'util';
