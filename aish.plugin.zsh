@@ -681,13 +681,14 @@ _aish_generate_widget() {
   if [[ -n "$request" ]]; then
     BUFFER=""
     zle redisplay
+    echo  # Move to next line before output
     local captured
     captured=$(AISH_COPY_TO_BUFFER=1 aish-generate "$request" 3>&1 1>/dev/tty)
     if [[ -n "$captured" ]]; then
       BUFFER="$captured"
       CURSOR=${#BUFFER}
-      zle redisplay
     fi
+    zle reset-prompt
   fi
 }
 zle -N _aish_generate_widget
@@ -699,7 +700,9 @@ _aish_query_widget() {
   if [[ -n "$query" ]]; then
     BUFFER=""
     zle redisplay
+    echo  # Move to next line before output
     aish-query "$query"
+    zle reset-prompt
   fi
 }
 zle -N _aish_query_widget
