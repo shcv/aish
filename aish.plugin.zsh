@@ -26,9 +26,8 @@ _aish_error() {
 # Convert path to safe directory name (like Claude does)
 _aish_path_to_dirname() {
   local path="$1"
-  # Replace / with - and remove leading - (pure zsh)
-  path="${path//\//-}"
-  echo "${path#-}"
+  # Replace / with - to match Claude's format (pure zsh)
+  echo "${path//\//-}"
 }
 
 # Get session directory for current working directory
@@ -261,8 +260,8 @@ _aish_cmd_help() {
   print "  help             Show this help"
   print ""
   print -P "%F{yellow}Keybindings:%f"
-  print "  Ctrl+G           Generate command from current line"
-  print "  Ctrl+Q           Ask about current line"
+  print "  Alt+J            Generate command from current line"
+  print "  Alt+K            Ask about current line"
   print ""
   print -P "%F{yellow}Configuration:%f"
   print "  AISH_BACKEND     auto, claude-code, api (current: $AISH_BACKEND)"
@@ -563,8 +562,15 @@ Request: $request"
       eval "$cmd"
       ;;
     c|C)
-      # Put command in the buffer for editing
-      print -z "$cmd"
+      # Output command for widget to capture, or use print -z as fallback
+      if [[ -n "$AISH_COPY_TO_BUFFER" ]]; then
+        # Widget mode - output to fd 3 for capture
+        print -r -- "$cmd" >&3
+      else
+        # Direct invocation - use buffer stack (will appear after next command)
+        print -z -- "$cmd"
+      fi
+      return 0
       ;;
     *)
       print -P "%F{240}Cancelled%f"
@@ -606,7 +612,8 @@ Current directory: $PWD"
       eval "$suggestion"
       ;;
     c|C)
-      print -z "$suggestion"
+      print -z -- "$suggestion"
+      return 0
       ;;
   esac
 }
@@ -668,19 +675,25 @@ add-zsh-hook precmd _aish_precmd
 # Keybindings
 # ============================================================================
 
-# Ctrl+G to generate command from current line
+# Alt+J to generate command from current line
 _aish_generate_widget() {
   local request="$BUFFER"
   if [[ -n "$request" ]]; then
     BUFFER=""
     zle redisplay
-    aish-generate "$request"
+    local captured
+    captured=$(AISH_COPY_TO_BUFFER=1 aish-generate "$request" 3>&1 1>/dev/tty)
+    if [[ -n "$captured" ]]; then
+      BUFFER="$captured"
+      CURSOR=${#BUFFER}
+      zle redisplay
+    fi
   fi
 }
 zle -N _aish_generate_widget
-bindkey '^G' _aish_generate_widget
+bindkey '^[j' _aish_generate_widget
 
-# Ctrl+Q to query (keeps line, asks about it)
+# Alt+K to query (keeps line, asks about it)
 _aish_query_widget() {
   local query="$BUFFER"
   if [[ -n "$query" ]]; then
@@ -690,7 +703,7 @@ _aish_query_widget() {
   fi
 }
 zle -N _aish_query_widget
-bindkey '^Q' _aish_query_widget
+bindkey '^[k' _aish_query_widget
 
 # ============================================================================
 # Startup message
@@ -711,8 +724,8 @@ _aish_init() {
     print -P "%F{green}[aish]%f AI shell integration loaded (backend: $backend)"
     print -P "%F{240}  ? <question>  - Ask a question%f"
     print -P "%F{240}  ! <request>   - Generate command%f"
-    print -P "%F{240}  Ctrl+G        - Generate from current line%f"
-    print -P "%F{240}  Ctrl+Q        - Query about current line%f"
+    print -P "%F{240}  Alt+J         - Generate from current line%f"
+    print -P "%F{240}  Alt+K         - Query about current line%f"
   fi
 }
 

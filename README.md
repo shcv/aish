@@ -34,8 +34,8 @@ Requires either:
 ! find all python files modified in the last week
 
 # Keybindings
-# Ctrl+G - Generate command from current line
-# Ctrl+Q - Ask about current line
+# Alt+J - Generate command from current line
+# Alt+K - Ask about current line
 
 # Manage sessions
 aish status      # Show session info
