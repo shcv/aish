@@ -8,6 +8,10 @@
 : ${AISH_DEBUG:=false}           # Show debug output
 : ${AISH_DATA_DIR:=${XDG_DATA_HOME:-$HOME/.local/share}/aish}  # Data directory
 
+# Exit codes to trap for error correction (space-separated)
+# 2=syntax error, 126=permission denied, 127=command not found
+: ${AISH_ERROR_TRAP_CODES:="2 126 127"}
+
 # Directory where this plugin lives
 AISH_DIR="${0:A:h}"
 
@@ -148,6 +152,7 @@ _aish_detect_backend() {
 # Send prompt to AI and get response
 _aish_query_ai() {
   local prompt="$1"
+  local allow_tools="${2:-false}"  # Whether to allow Claude to use bash/tools
   local backend=$(_aish_detect_backend)
 
   _aish_debug "Backend: $backend"
@@ -158,21 +163,36 @@ _aish_query_ai() {
       local session_id=$(_aish_get_session_id)
       local claude_config_dir=$(_aish_claude_config_dir)
       local result
+      local -a claude_args
 
       # Ensure our Claude config dir is set up
       _aish_ensure_claude_config
 
+      # Build base arguments
+      claude_args=(-p "$prompt" --output-format text)
+
+      # Restrict tools for query-only mode (prevents accidental command execution)
+      if [[ "$allow_tools" != "true" ]]; then
+        claude_args+=(--allowedTools '')
+      fi
+
       _aish_debug "Session ID: $session_id"
       _aish_debug "Claude config: $claude_config_dir"
+      _aish_debug "Allow tools: $allow_tools"
 
       if _aish_session_exists; then
         # Continue existing session
         _aish_debug "Resuming existing session"
-        result=$(CLAUDE_CONFIG_DIR="$claude_config_dir" claude -p "$prompt" --resume "$session_id" --output-format text 2>/dev/null)
+        claude_args+=(--resume "$session_id")
       else
         # Start new session with our ID
         _aish_debug "Starting new session"
-        result=$(CLAUDE_CONFIG_DIR="$claude_config_dir" claude -p "$prompt" --session-id "$session_id" --output-format text 2>/dev/null)
+        claude_args+=(--session-id "$session_id")
+      fi
+
+      result=$(CLAUDE_CONFIG_DIR="$claude_config_dir" claude "${claude_args[@]}" 2>/dev/null)
+
+      if ! _aish_session_exists; then
         _aish_mark_session_started
       fi
 
@@ -246,16 +266,19 @@ _aish_cmd_help() {
   print ""
   print -P "%F{yellow}Usage:%f"
   print "  ? <question>     Ask AI a question"
+  print "  ?                Interactive mode (readline editing, history)"
   print "  ! <request>      Generate a shell command"
+  print "  !                Interactive mode (readline editing, history)"
   print "  aish <command>   Manage aish"
   print ""
   print -P "%F{yellow}Commands:%f"
-  print "  status           Show current session info and usage"
+  print "  status           Show current session info and backend status"
   print "  reset [--all]    Reset session for current dir (--all for all sessions)"
   print "  compact          Compact/summarize current session to reduce context"
   print "  sessions         List all sessions"
   print "  switch <id>      Switch to a different session"
   print "  config [key=val] Show or set configuration"
+  print "  config trap      Manage error trap codes (list/add/remove/reset)"
   print "  debug            Toggle debug mode"
   print "  help             Show this help"
   print ""
@@ -263,11 +286,15 @@ _aish_cmd_help() {
   print "  Alt+J            Generate command from current line"
   print "  Alt+K            Ask about current line"
   print ""
+  print -P "%F{240}Use interactive mode (? or !) or keybindings for quotes/special chars%f"
+  print ""
   print -P "%F{yellow}Configuration:%f"
-  print "  AISH_BACKEND     auto, claude-code, api (current: $AISH_BACKEND)"
-  print "  AISH_MODEL       sonnet, opus, haiku (current: $AISH_MODEL)"
-  print "  AISH_DEBUG       true/false (current: $AISH_DEBUG)"
-  print "  AISH_DATA_DIR    Data directory (current: $AISH_DATA_DIR)"
+  print "  AISH_BACKEND           auto, claude-code, api (current: $AISH_BACKEND)"
+  print "  AISH_MODEL             sonnet, opus, haiku (current: $AISH_MODEL)"
+  print "  AISH_DEBUG             true/false (current: $AISH_DEBUG)"
+  print "  AISH_ERROR_CORRECTION  true/false (current: $AISH_ERROR_CORRECTION)"
+  print "  AISH_ERROR_TRAP_CODES  Exit codes to trap (current: $AISH_ERROR_TRAP_CODES)"
+  print "  AISH_DATA_DIR          Data directory"
 }
 
 _aish_cmd_status() {
@@ -441,6 +468,7 @@ _aish_cmd_switch() {
 
 _aish_cmd_config() {
   local setting="$1"
+  shift 2>/dev/null
 
   if [[ -z "$setting" ]]; then
     # Show current config
@@ -449,7 +477,14 @@ _aish_cmd_config() {
     print "  AISH_MODEL=$AISH_MODEL"
     print "  AISH_DEBUG=$AISH_DEBUG"
     print "  AISH_ERROR_CORRECTION=$AISH_ERROR_CORRECTION"
+    print "  AISH_ERROR_TRAP_CODES=\"$AISH_ERROR_TRAP_CODES\""
     print "  AISH_DATA_DIR=$AISH_DATA_DIR"
+    return
+  fi
+
+  # Handle trap subcommand
+  if [[ "$setting" == "trap" ]]; then
+    _aish_cmd_config_trap "$@"
     return
   fi
 
@@ -474,8 +509,83 @@ _aish_cmd_config() {
       AISH_ERROR_CORRECTION="$value"
       print -P "%F{green}AISH_ERROR_CORRECTION=$value%f"
       ;;
+    trap_codes|AISH_ERROR_TRAP_CODES)
+      AISH_ERROR_TRAP_CODES="$value"
+      print -P "%F{green}AISH_ERROR_TRAP_CODES=\"$value\"%f"
+      ;;
     *)
       _aish_error "Unknown config key: $key"
+      return 1
+      ;;
+  esac
+}
+
+_aish_cmd_config_trap() {
+  local action="$1"
+  local code="$2"
+
+  case "$action" in
+    ""|list)
+      print -P "%F{cyan}Error trap codes:%f $AISH_ERROR_TRAP_CODES"
+      print ""
+      print -P "%F{240}Common codes:%f"
+      print "  2   = Syntax/usage error"
+      print "  126 = Permission denied (cannot execute)"
+      print "  127 = Command not found"
+      print "  128 = Invalid exit argument"
+      print "  130 = Ctrl+C (don't trap - user canceled)"
+      ;;
+    add|on)
+      if [[ -z "$code" ]]; then
+        _aish_error "Usage: aish config trap add <code>"
+        return 1
+      fi
+      if [[ ! "$code" =~ ^[0-9]+$ ]]; then
+        _aish_error "Invalid exit code: $code"
+        return 1
+      fi
+      # Check if already present
+      local -a trap_codes
+      trap_codes=(${=AISH_ERROR_TRAP_CODES})
+      for existing in "${trap_codes[@]}"; do
+        if [[ "$existing" == "$code" ]]; then
+          print -P "%F{yellow}Code $code already in trap list%f"
+          return 0
+        fi
+      done
+      AISH_ERROR_TRAP_CODES="$AISH_ERROR_TRAP_CODES $code"
+      print -P "%F{green}Added exit code $code to trap list%f"
+      ;;
+    remove|off|rm)
+      if [[ -z "$code" ]]; then
+        _aish_error "Usage: aish config trap remove <code>"
+        return 1
+      fi
+      local -a trap_codes new_codes
+      trap_codes=(${=AISH_ERROR_TRAP_CODES})
+      new_codes=()
+      local found=false
+      for existing in "${trap_codes[@]}"; do
+        if [[ "$existing" == "$code" ]]; then
+          found=true
+        else
+          new_codes+=("$existing")
+        fi
+      done
+      if [[ "$found" == "true" ]]; then
+        AISH_ERROR_TRAP_CODES="${new_codes[*]}"
+        print -P "%F{green}Removed exit code $code from trap list%f"
+      else
+        print -P "%F{yellow}Code $code not in trap list%f"
+      fi
+      ;;
+    reset)
+      AISH_ERROR_TRAP_CODES="2 126 127"
+      print -P "%F{green}Reset trap codes to default: $AISH_ERROR_TRAP_CODES%f"
+      ;;
+    *)
+      _aish_error "Unknown trap action: $action"
+      print "Usage: aish config trap [list|add|remove|reset] [code]"
       return 1
       ;;
   esac
@@ -492,12 +602,18 @@ _aish_cmd_debug() {
 }
 
 # Ask a question - callable as: ? what is the capital of France
+# For questions with quotes/special chars, use: ? (interactive) or Alt+K
 aish-query() {
   local query="$*"
 
+  # Interactive mode if no args provided - use vared for readline editing
   if [[ -z "$query" ]]; then
-    print -P "%F{yellow}Usage: ? <question>%f"
-    return 1
+    local REPLY=""
+    vared -c -h -p "%F{cyan}?%f " REPLY || return 0
+    query="$REPLY"
+    if [[ -z "$query" ]]; then
+      return 0
+    fi
   fi
 
   local prompt="Answer this question concisely. Be direct and helpful.
@@ -513,7 +629,11 @@ Question: $query"
 
   if [[ -n "$answer" ]]; then
     # Clear the "Thinking..." line and print answer
-    print -P "\033[1A\033[2K%F{cyan}$answer%f"
+    # Use print -r to avoid interpreting escapes in the answer
+    print -n "\033[1A\033[2K"
+    print -P -n "%F{cyan}"
+    print -r -- "$answer"
+    print -P -n "%f"
   else
     print -P "\033[1A\033[2K%F{red}Failed to get response%f"
     return 1
@@ -521,12 +641,18 @@ Question: $query"
 }
 
 # Generate command - callable as: ! find all python files
+# For requests with quotes/special chars, use: ! (interactive) or Alt+J
 aish-generate() {
   local request="$*"
 
+  # Interactive mode if no args provided - use vared for readline editing
   if [[ -z "$request" ]]; then
-    print -P "%F{yellow}Usage: ! <description>%f"
-    return 1
+    local REPLY=""
+    vared -c -h -p "%F{yellow}!%f " REPLY || return 0
+    request="$REPLY"
+    if [[ -z "$request" ]]; then
+      return 0
+    fi
   fi
 
   local prompt="Generate a shell command for zsh based on this request.
@@ -645,13 +771,14 @@ _aish_precmd() {
   [[ $_aish_last_status -eq 0 ]] && return
   [[ -z "$_aish_last_command" ]] && return
 
-  # Skip common "expected" failures
-  case "$_aish_last_command" in
-    grep*|rg*|find*|which*|test*|\[*)
-      # These often return non-zero normally
-      [[ $_aish_last_status -eq 1 ]] && return
-      ;;
-  esac
+  # Only trap on specific exit codes (configurable)
+  local -a trap_codes
+  trap_codes=(${=AISH_ERROR_TRAP_CODES})
+  local should_trap=false
+  for code in "${trap_codes[@]}"; do
+    [[ $_aish_last_status -eq $code ]] && should_trap=true && break
+  done
+  [[ "$should_trap" != "true" ]] && return
 
   # Offer correction
   print -P "%F{red}Command failed (exit $_aish_last_status)%f"
@@ -675,35 +802,46 @@ add-zsh-hook precmd _aish_precmd
 # Keybindings
 # ============================================================================
 
-# Alt+J to generate command from current line
+# Alt+J to generate command from current line (or interactive if empty)
 _aish_generate_widget() {
   local request="$BUFFER"
+  BUFFER=""
+  zle redisplay
+  echo  # Move to next line before output
   if [[ -n "$request" ]]; then
-    BUFFER=""
-    zle redisplay
-    echo  # Move to next line before output
     local captured
     captured=$(AISH_COPY_TO_BUFFER=1 aish-generate "$request" 3>&1 1>/dev/tty)
     if [[ -n "$captured" ]]; then
       BUFFER="$captured"
       CURSOR=${#BUFFER}
     fi
-    zle reset-prompt
+  else
+    # Interactive mode when buffer is empty
+    local captured
+    captured=$(AISH_COPY_TO_BUFFER=1 aish-generate 3>&1 1>/dev/tty)
+    if [[ -n "$captured" ]]; then
+      BUFFER="$captured"
+      CURSOR=${#BUFFER}
+    fi
   fi
+  zle reset-prompt
 }
 zle -N _aish_generate_widget
 bindkey '^[j' _aish_generate_widget
 
-# Alt+K to query (keeps line, asks about it)
+# Alt+K to query about current line (or interactive if empty)
 _aish_query_widget() {
   local query="$BUFFER"
+  BUFFER=""
+  zle redisplay
+  echo  # Move to next line before output
   if [[ -n "$query" ]]; then
-    BUFFER=""
-    zle redisplay
-    echo  # Move to next line before output
     aish-query "$query"
-    zle reset-prompt
+  else
+    # Interactive mode when buffer is empty
+    aish-query
   fi
+  zle reset-prompt
 }
 zle -N _aish_query_widget
 bindkey '^[k' _aish_query_widget
