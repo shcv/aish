@@ -264,14 +264,14 @@ aish() {
 _aish_cmd_help() {
   print -P "%F{cyan}aish%f - AI Shell Integration"
   print ""
-  print -P "%F{yellow}Usage:%f"
-  print "  ? <question>     Ask AI a question"
-  print "  ?                Interactive mode (readline editing, history)"
-  print "  ! <request>      Generate a shell command"
-  print "  !                Interactive mode (readline editing, history)"
-  print "  aish <command>   Manage aish"
+  print -P "%F{yellow}Keybindings:%f"
+  print "  Alt+J            Generate command from current line"
+  print "  Alt+K            Ask about current line"
   print ""
   print -P "%F{yellow}Commands:%f"
+  print "  aish <command>   Manage aish"
+  print ""
+  print -P "%F{yellow}Management:%f"
   print "  status           Show current session info and backend status"
   print "  reset [--all]    Reset session for current dir (--all for all sessions)"
   print "  compact          Compact/summarize current session to reduce context"
@@ -281,12 +281,6 @@ _aish_cmd_help() {
   print "  config trap      Manage error trap codes (list/add/remove/reset)"
   print "  debug            Toggle debug mode"
   print "  help             Show this help"
-  print ""
-  print -P "%F{yellow}Keybindings:%f"
-  print "  Alt+J            Generate command from current line"
-  print "  Alt+K            Ask about current line"
-  print ""
-  print -P "%F{240}Use interactive mode (? or !) or keybindings for quotes/special chars%f"
   print ""
   print -P "%F{yellow}Configuration:%f"
   print "  AISH_BACKEND           auto, claude-code, api (current: $AISH_BACKEND)"
@@ -601,8 +595,6 @@ _aish_cmd_debug() {
   fi
 }
 
-# Ask a question - callable as: ? what is the capital of France
-# For questions with quotes/special chars, use: ? (interactive) or Alt+K
 aish-query() {
   local query="$*"
 
@@ -640,8 +632,6 @@ Question: $query"
   fi
 }
 
-# Generate command - callable as: ! find all python files
-# For requests with quotes/special chars, use: ! (interactive) or Alt+J
 aish-generate() {
   local request="$*"
 
@@ -743,13 +733,6 @@ Current directory: $PWD"
       ;;
   esac
 }
-
-# ============================================================================
-# Aliases for ? and !
-# ============================================================================
-
-alias '?'='aish-query'
-alias '!'='aish-generate'
 
 # ============================================================================
 # Error correction hook
@@ -863,8 +846,6 @@ _aish_init() {
 
   if [[ "$AISH_DEBUG" == "true" ]]; then
     print -P "%F{green}[aish]%f AI shell integration loaded (backend: $backend)"
-    print -P "%F{240}  ? <question>  - Ask a question%f"
-    print -P "%F{240}  ! <request>   - Generate command%f"
     print -P "%F{240}  Alt+J         - Generate from current line%f"
     print -P "%F{240}  Alt+K         - Query about current line%f"
   fi

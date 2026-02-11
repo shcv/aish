@@ -29,19 +29,13 @@ source /path/to/aish/aish.fish
 
 ## Usage
 
-### Keybindings (Recommended)
+### Keybindings
 
 - `Alt+J` - Generate command from current line, or interactive mode if empty
 - `Alt+K` - Ask question about current line, or interactive mode if empty
 
-These keybindings are the recommended interface as they handle quotes, special characters, and complex input properly.
-
 ### Commands
 
-- `? <question>` - Ask AI a question (simple queries only, avoid special chars)
-- `?` - Interactive mode with readline editing (for quotes/special chars)
-- `! <request>` - Generate shell command (zsh only; conflicts with fish history)
-- `!` - Interactive mode with readline editing (zsh only)
 - `aish <command>` - Manage sessions, config, etc.
 
 ### Management Commands
@@ -97,4 +91,4 @@ Both plugins extend their respective shells rather than wrapping them, so shell 
 ### Key Functions
 - `_aish_query_ai` - Core AI query, handles session/resume logic
 - `aish` - Main command dispatcher for management subcommands
-- `aish-query`, `aish-generate` - User-facing `?` and `!` commands
+- `aish-query`, `aish-generate` - AI query/generate (called by keybindings)

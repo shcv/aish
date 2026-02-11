@@ -265,7 +265,6 @@ function _aish_cmd_help
     set_color yellow
     echo "Commands:"
     set_color normal
-    echo "  ? <question>     Ask AI a question (simple queries only)"
     echo "  aish <command>   Manage aish"
     echo
     set_color yellow
@@ -664,8 +663,6 @@ end
 # Query and Generate functions
 # ============================================================================
 
-# Ask a question
-# For questions with quotes/special chars, use: ? (interactive) or Alt+K
 function aish-query -d "Ask AI a question"
     set -l query "$argv"
 
@@ -705,8 +702,6 @@ Question: $query"
     end
 end
 
-# Generate command
-# For requests with quotes/special chars, use: ! (interactive) or Alt+J
 function aish-generate -d "Generate shell command from description"
     set -l request "$argv"
 
@@ -814,42 +809,6 @@ Current directory: $PWD"
         case '*'
             echo
     end
-end
-
-# ============================================================================
-# Command functions for ? and !
-# ============================================================================
-
-# Use fish_user_key_bindings to intercept ? and ! at start of line
-function _aish_handle_question_mark
-    set -l cmd (commandline -b)
-    if test -z "$cmd"
-        # At empty prompt, insert the function call
-        commandline -i '? '
-    else
-        # Otherwise just insert ?
-        commandline -i '?'
-    end
-end
-
-function _aish_handle_bang
-    set -l cmd (commandline -b)
-    if test -z "$cmd"
-        # At empty prompt, insert the function call
-        commandline -i '! '
-    else
-        # Otherwise just insert !
-        commandline -i '!'
-    end
-end
-
-# Register ? and ! as actual command functions
-function \? -d "Ask AI a question"
-    aish-query $argv
-end
-
-function \! -d "Generate shell command"
-    aish-generate $argv
 end
 
 # ============================================================================
@@ -991,8 +950,6 @@ function _aish_init
         set_color normal
         echo " AI shell integration loaded (backend: $backend)"
         set_color brblack
-        echo "  ? <question>  - Ask a question"
-        echo "  ! <request>   - Generate command"
         echo "  Alt+J         - Generate from current line"
         echo "  Alt+K         - Query about current line"
         set_color normal
