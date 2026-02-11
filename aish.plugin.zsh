@@ -8,10 +8,6 @@
 : ${AISH_DEBUG:=false}           # Show debug output
 : ${AISH_DATA_DIR:=${XDG_DATA_HOME:-$HOME/.local/share}/aish}  # Data directory
 
-# Exit codes to trap for error correction (space-separated)
-# 2=syntax error, 126=permission denied, 127=command not found
-: ${AISH_ERROR_TRAP_CODES:="2 126 127"}
-
 # Directory where this plugin lives
 AISH_DIR="${0:A:h}"
 
@@ -278,7 +274,6 @@ _aish_cmd_help() {
   print "  sessions         List all sessions"
   print "  switch <id>      Switch to a different session"
   print "  config [key=val] Show or set configuration"
-  print "  config trap      Manage error trap codes (list/add/remove/reset)"
   print "  debug            Toggle debug mode"
   print "  help             Show this help"
   print ""
@@ -287,7 +282,6 @@ _aish_cmd_help() {
   print "  AISH_MODEL             sonnet, opus, haiku (current: $AISH_MODEL)"
   print "  AISH_DEBUG             true/false (current: $AISH_DEBUG)"
   print "  AISH_ERROR_CORRECTION  true/false (current: $AISH_ERROR_CORRECTION)"
-  print "  AISH_ERROR_TRAP_CODES  Exit codes to trap (current: $AISH_ERROR_TRAP_CODES)"
   print "  AISH_DATA_DIR          Data directory"
 }
 
@@ -471,14 +465,7 @@ _aish_cmd_config() {
     print "  AISH_MODEL=$AISH_MODEL"
     print "  AISH_DEBUG=$AISH_DEBUG"
     print "  AISH_ERROR_CORRECTION=$AISH_ERROR_CORRECTION"
-    print "  AISH_ERROR_TRAP_CODES=\"$AISH_ERROR_TRAP_CODES\""
     print "  AISH_DATA_DIR=$AISH_DATA_DIR"
-    return
-  fi
-
-  # Handle trap subcommand
-  if [[ "$setting" == "trap" ]]; then
-    _aish_cmd_config_trap "$@"
     return
   fi
 
@@ -503,83 +490,8 @@ _aish_cmd_config() {
       AISH_ERROR_CORRECTION="$value"
       print -P "%F{green}AISH_ERROR_CORRECTION=$value%f"
       ;;
-    trap_codes|AISH_ERROR_TRAP_CODES)
-      AISH_ERROR_TRAP_CODES="$value"
-      print -P "%F{green}AISH_ERROR_TRAP_CODES=\"$value\"%f"
-      ;;
     *)
       _aish_error "Unknown config key: $key"
-      return 1
-      ;;
-  esac
-}
-
-_aish_cmd_config_trap() {
-  local action="$1"
-  local code="$2"
-
-  case "$action" in
-    ""|list)
-      print -P "%F{cyan}Error trap codes:%f $AISH_ERROR_TRAP_CODES"
-      print ""
-      print -P "%F{240}Common codes:%f"
-      print "  2   = Syntax/usage error"
-      print "  126 = Permission denied (cannot execute)"
-      print "  127 = Command not found"
-      print "  128 = Invalid exit argument"
-      print "  130 = Ctrl+C (don't trap - user canceled)"
-      ;;
-    add|on)
-      if [[ -z "$code" ]]; then
-        _aish_error "Usage: aish config trap add <code>"
-        return 1
-      fi
-      if [[ ! "$code" =~ ^[0-9]+$ ]]; then
-        _aish_error "Invalid exit code: $code"
-        return 1
-      fi
-      # Check if already present
-      local -a trap_codes
-      trap_codes=(${=AISH_ERROR_TRAP_CODES})
-      for existing in "${trap_codes[@]}"; do
-        if [[ "$existing" == "$code" ]]; then
-          print -P "%F{yellow}Code $code already in trap list%f"
-          return 0
-        fi
-      done
-      AISH_ERROR_TRAP_CODES="$AISH_ERROR_TRAP_CODES $code"
-      print -P "%F{green}Added exit code $code to trap list%f"
-      ;;
-    remove|off|rm)
-      if [[ -z "$code" ]]; then
-        _aish_error "Usage: aish config trap remove <code>"
-        return 1
-      fi
-      local -a trap_codes new_codes
-      trap_codes=(${=AISH_ERROR_TRAP_CODES})
-      new_codes=()
-      local found=false
-      for existing in "${trap_codes[@]}"; do
-        if [[ "$existing" == "$code" ]]; then
-          found=true
-        else
-          new_codes+=("$existing")
-        fi
-      done
-      if [[ "$found" == "true" ]]; then
-        AISH_ERROR_TRAP_CODES="${new_codes[*]}"
-        print -P "%F{green}Removed exit code $code from trap list%f"
-      else
-        print -P "%F{yellow}Code $code not in trap list%f"
-      fi
-      ;;
-    reset)
-      AISH_ERROR_TRAP_CODES="2 126 127"
-      print -P "%F{green}Reset trap codes to default: $AISH_ERROR_TRAP_CODES%f"
-      ;;
-    *)
-      _aish_error "Unknown trap action: $action"
-      print "Usage: aish config trap [list|add|remove|reset] [code]"
       return 1
       ;;
   esac
@@ -694,44 +606,86 @@ Request: $request"
   esac
 }
 
-# Suggest correction for failed command
-aish-correct() {
+# Check failed command with Haiku for triage + correction in a single call
+_aish_check_error() {
   local failed_cmd="$1"
   local exit_code="$2"
-  local error_output="$3"
 
-  local prompt="This shell command failed. Suggest a corrected version.
-IMPORTANT: Output ONLY the corrected command, nothing else.
+  local triage_prompt="A shell command failed. If this is a user error that can be corrected, provide ONLY the corrected command inside <correction></correction> tags on a single line. If not correctable, respond with just \"no\".
 
-Failed command: $failed_cmd
+Correctable: typos, wrong flags, command not found, permission issues, wrong paths, missing deps, syntax errors.
+Not correctable: expected non-zero (grep no match, diff differences, test checks), build/test failures from code bugs, signals.
+
+Command: $failed_cmd
 Exit code: $exit_code
-Error: $error_output
-Current directory: $PWD"
+Shell: zsh
+Directory: $PWD"
 
-  local suggestion
-  suggestion=$(_aish_query_ai "$prompt")
+  local backend=$(_aish_detect_backend)
+  local response=""
 
-  if [[ -z "$suggestion" || "$suggestion" == "$failed_cmd" ]]; then
-    return 1
-  fi
+  # Show indicator and set up Ctrl+C cleanup
+  print -Pn "%F{240}Checking...%f"
+  trap 'print -n "\r\033[2K"; trap - INT; return 0' INT
 
-  # Clean up
-  suggestion=$(_aish_strip_markdown "$suggestion")
-
-  print -P "%F{yellow}Suggested fix: %F{white}$suggestion%f"
-  print -Pn "%F{240}[e]xecute, [c]opy to prompt, [n]o? %f"
-  read -k1 action
-  echo
-
-  case "$action" in
-    e|E|y|Y)
-      eval "$suggestion"
+  case "$backend" in
+    api)
+      # Direct API call to Haiku with 5s timeout
+      response=$(curl -s --max-time 5 https://api.anthropic.com/v1/messages \
+        -H "Content-Type: application/json" \
+        -H "x-api-key: $ANTHROPIC_API_KEY" \
+        -H "anthropic-version: 2023-06-01" \
+        -d "{
+          \"model\": \"claude-haiku-4-5-20251001\",
+          \"max_tokens\": 256,
+          \"messages\": [{\"role\": \"user\", \"content\": $(printf '%s' "$triage_prompt" | jq -Rs .)}]
+        }" 2>/dev/null)
+      response=$(echo "$response" | jq -r '.content[0].text // empty' 2>/dev/null)
       ;;
-    c|C)
-      print -z -- "$suggestion"
-      return 0
+    claude-code)
+      # Use claude -p without session, isolated config dir
+      local claude_config_dir=$(_aish_claude_config_dir)
+      _aish_ensure_claude_config
+      response=$(CLAUDE_CONFIG_DIR="$claude_config_dir" timeout 5 claude -p "$triage_prompt" --model claude-haiku-4-5-20251001 --output-format text --allowedTools '' 2>/dev/null)
+      ;;
+    *)
+      print -n "\r\033[2K"
+      trap - INT
+      return 1
       ;;
   esac
+
+  # Clear indicator
+  print -n "\r\033[2K"
+  trap - INT
+
+  _aish_debug "Error triage response: $response"
+
+  # Check for <correction> tags
+  if [[ "$response" == *"<correction>"*"</correction>"* ]]; then
+    # Extract command between tags
+    local suggestion="${response#*<correction>}"
+    suggestion="${suggestion%%</correction>*}"
+    # Trim whitespace
+    suggestion="${suggestion#"${suggestion%%[![:space:]]*}"}"
+    suggestion="${suggestion%"${suggestion##*[![:space:]]}"}"
+
+    if [[ -n "$suggestion" && "$suggestion" != "$failed_cmd" ]]; then
+      print -P "%F{yellow}Suggested fix: %F{white}$suggestion%f"
+      print -Pn "%F{240}[e]xecute, [c]opy to prompt, [n]o? %f"
+      read -k1 action
+      echo
+
+      case "$action" in
+        e|E|y|Y)
+          eval "$suggestion"
+          ;;
+        c|C)
+          print -z -- "$suggestion"
+          ;;
+      esac
+    fi
+  fi
 }
 
 # ============================================================================
@@ -754,24 +708,12 @@ _aish_precmd() {
   [[ $_aish_last_status -eq 0 ]] && return
   [[ -z "$_aish_last_command" ]] && return
 
-  # Only trap on specific exit codes (configurable)
-  local -a trap_codes
-  trap_codes=(${=AISH_ERROR_TRAP_CODES})
-  local should_trap=false
-  for code in "${trap_codes[@]}"; do
-    [[ $_aish_last_status -eq $code ]] && should_trap=true && break
-  done
-  [[ "$should_trap" != "true" ]] && return
+  # Fast-path: ignore signal exit codes (Ctrl+C, SIGPIPE, SIGTERM)
+  case $_aish_last_status in
+    130|141|143) _aish_last_command=""; return ;;
+  esac
 
-  # Offer correction
-  print -P "%F{red}Command failed (exit $_aish_last_status)%f"
-  print -Pn "%F{240}Ask AI for correction? [y/n] %f"
-  read -k1 ask
-  echo
-
-  if [[ "$ask" == "y" || "$ask" == "Y" ]]; then
-    aish-correct "$_aish_last_command" "$_aish_last_status" ""
-  fi
+  _aish_check_error "$_aish_last_command" "$_aish_last_status"
 
   _aish_last_command=""
 }

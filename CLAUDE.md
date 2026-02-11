@@ -46,7 +46,6 @@ source /path/to/aish/aish.fish
 - `aish sessions` - List all sessions
 - `aish switch <id>` - Switch to a different session
 - `aish config [key=val]` - Show or set configuration
-- `aish config trap [list|add|remove|reset] [code]` - Manage error trap codes
 - `aish debug` - Toggle debug mode
 
 ### Configuration
@@ -55,25 +54,11 @@ source /path/to/aish/aish.fish
 - `AISH_MODEL` - sonnet, opus, haiku (default: sonnet)
 - `AISH_DEBUG` - true/false (default: false)
 - `AISH_ERROR_CORRECTION` - true/false (default: true)
-- `AISH_ERROR_TRAP_CODES` - Exit codes to offer correction (default: "2 126 127")
 - `AISH_DATA_DIR` - Data directory (default: $XDG_DATA_HOME/aish)
 
-### Error Trap Codes
+### Error Correction
 
-By default, aish only offers error correction for specific exit codes:
-- 2 = Syntax/usage error
-- 126 = Permission denied (cannot execute)
-- 127 = Command not found
-
-This avoids prompting for common "expected" failures like grep finding no matches (exit 1) or user cancellation with Ctrl+C (exit 130).
-
-Manage trap codes with:
-```
-aish config trap              # List current codes
-aish config trap add 1        # Add code to trap list
-aish config trap remove 127   # Remove code from list
-aish config trap reset        # Reset to defaults
-```
+When a command fails, aish sends the command and exit code to Haiku in a single triage+correction call. Signal exits (130/Ctrl+C, 141/SIGPIPE, 143/SIGTERM) are fast-path ignored. If Haiku determines the error is correctable (typos, wrong flags, command not found, etc.), it returns a suggestion; otherwise it stays silent with no user-visible prompt.
 
 ## Architecture
 
@@ -92,3 +77,4 @@ Both plugins extend their respective shells rather than wrapping them, so shell 
 - `_aish_query_ai` - Core AI query, handles session/resume logic
 - `aish` - Main command dispatcher for management subcommands
 - `aish-query`, `aish-generate` - AI query/generate (called by keybindings)
+- `_aish_check_error` - Haiku-based error triage and correction

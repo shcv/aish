@@ -8,10 +8,6 @@ set -q AISH_ERROR_CORRECTION; or set -g AISH_ERROR_CORRECTION true  # Enable err
 set -q AISH_DEBUG; or set -g AISH_DEBUG false             # Show debug output
 set -q AISH_DATA_DIR; or set -g AISH_DATA_DIR (set -q XDG_DATA_HOME; and echo $XDG_DATA_HOME; or echo $HOME/.local/share)/aish
 
-# Exit codes to trap for error correction (space-separated list)
-# 2=syntax error, 126=permission denied, 127=command not found
-set -q AISH_ERROR_TRAP_CODES; or set -g AISH_ERROR_TRAP_CODES 2 126 127
-
 # Directory where this plugin lives
 set -g AISH_DIR (dirname (status filename))
 
@@ -276,7 +272,6 @@ function _aish_cmd_help
     echo "  aish sessions    List all sessions"
     echo "  aish switch <id> Switch to a different session"
     echo "  aish config      Show or set configuration"
-    echo "  aish config trap Manage error trap codes"
     echo "  aish debug       Toggle debug mode"
     echo
     set_color yellow
@@ -286,7 +281,6 @@ function _aish_cmd_help
     echo "  AISH_MODEL             sonnet, opus, haiku (current: $AISH_MODEL)"
     echo "  AISH_DEBUG             true/false (current: $AISH_DEBUG)"
     echo "  AISH_ERROR_CORRECTION  true/false (current: $AISH_ERROR_CORRECTION)"
-    echo "  AISH_ERROR_TRAP_CODES  Exit codes to trap (current: $AISH_ERROR_TRAP_CODES)"
 end
 
 function _aish_cmd_status
@@ -523,14 +517,7 @@ function _aish_cmd_config
         echo "  AISH_MODEL=$AISH_MODEL"
         echo "  AISH_DEBUG=$AISH_DEBUG"
         echo "  AISH_ERROR_CORRECTION=$AISH_ERROR_CORRECTION"
-        echo "  AISH_ERROR_TRAP_CODES=\"$AISH_ERROR_TRAP_CODES\""
         echo "  AISH_DATA_DIR=$AISH_DATA_DIR"
-        return
-    end
-
-    # Handle trap subcommand
-    if test "$setting" = trap
-        _aish_cmd_config_trap $argv
         return
     end
 
@@ -559,88 +546,8 @@ function _aish_cmd_config
             set_color green
             echo "AISH_ERROR_CORRECTION=$value"
             set_color normal
-        case trap_codes AISH_ERROR_TRAP_CODES
-            set -g AISH_ERROR_TRAP_CODES (string split ' ' -- "$value")
-            set_color green
-            echo "AISH_ERROR_TRAP_CODES=\"$value\""
-            set_color normal
         case '*'
             _aish_error "Unknown config key: $key"
-            return 1
-    end
-end
-
-function _aish_cmd_config_trap
-    set -l action $argv[1]
-    set -l code $argv[2]
-
-    switch "$action"
-        case '' list
-            set_color cyan
-            echo -n "Error trap codes: "
-            set_color normal
-            echo "$AISH_ERROR_TRAP_CODES"
-            echo
-            set_color brblack
-            echo "Common codes:"
-            set_color normal
-            echo "  2   = Syntax/usage error"
-            echo "  126 = Permission denied (cannot execute)"
-            echo "  127 = Command not found"
-            echo "  128 = Invalid exit argument"
-            echo "  130 = Ctrl+C (don't trap - user canceled)"
-        case add on
-            if test -z "$code"
-                _aish_error "Usage: aish config trap add <code>"
-                return 1
-            end
-            if not string match -qr '^[0-9]+$' -- "$code"
-                _aish_error "Invalid exit code: $code"
-                return 1
-            end
-            # Check if already present
-            if contains -- $code $AISH_ERROR_TRAP_CODES
-                set_color yellow
-                echo "Code $code already in trap list"
-                set_color normal
-                return 0
-            end
-            set -g AISH_ERROR_TRAP_CODES $AISH_ERROR_TRAP_CODES $code
-            set_color green
-            echo "Added exit code $code to trap list"
-            set_color normal
-        case remove off rm
-            if test -z "$code"
-                _aish_error "Usage: aish config trap remove <code>"
-                return 1
-            end
-            set -l new_codes
-            set -l found false
-            for existing in $AISH_ERROR_TRAP_CODES
-                if test "$existing" = "$code"
-                    set found true
-                else
-                    set new_codes $new_codes $existing
-                end
-            end
-            if test "$found" = true
-                set -g AISH_ERROR_TRAP_CODES $new_codes
-                set_color green
-                echo "Removed exit code $code from trap list"
-                set_color normal
-            else
-                set_color yellow
-                echo "Code $code not in trap list"
-                set_color normal
-            end
-        case reset
-            set -g AISH_ERROR_TRAP_CODES 2 126 127
-            set_color green
-            echo "Reset trap codes to default: $AISH_ERROR_TRAP_CODES"
-            set_color normal
-        case '*'
-            _aish_error "Unknown trap action: $action"
-            echo "Usage: aish config trap [list|add|remove|reset] [code]"
             return 1
     end
 end
@@ -767,47 +674,83 @@ Request: $request"
     end
 end
 
-# Suggest correction for failed command
-function aish-correct -d "Suggest correction for failed command"
+# Check failed command with Haiku for triage + correction in a single call
+function _aish_check_error -d "Triage and correct failed command"
     set -l failed_cmd $argv[1]
     set -l exit_code $argv[2]
-    set -l error_output $argv[3]
 
-    set -l prompt "This shell command failed. Suggest a corrected version.
-IMPORTANT: Output ONLY the corrected command, nothing else.
+    set -l triage_prompt "A shell command failed. If this is a user error that can be corrected, provide ONLY the corrected command inside <correction></correction> tags on a single line. If not correctable, respond with just \"no\".
 
-Failed command: $failed_cmd
+Correctable: typos, wrong flags, command not found, permission issues, wrong paths, missing deps, syntax errors.
+Not correctable: expected non-zero (grep no match, diff differences, test checks), build/test failures from code bugs, signals.
+
+Command: $failed_cmd
 Exit code: $exit_code
-Error: $error_output
-Current directory: $PWD"
+Shell: fish
+Directory: $PWD"
 
-    set -l suggestion (_aish_query_ai "$prompt")
+    set -l backend (_aish_detect_backend)
+    set -l response ""
 
-    if test -z "$suggestion"; or test "$suggestion" = "$failed_cmd"
-        return 1
+    # Show indicator
+    printf '%s' (set_color brblack)"Checking..."(set_color normal)
+
+    switch $backend
+        case api
+            # Direct API call to Haiku with 5s timeout
+            set -l json_prompt (printf '%s' "$triage_prompt" | jq -Rs .)
+            set response (curl -s --max-time 5 https://api.anthropic.com/v1/messages \
+                -H "Content-Type: application/json" \
+                -H "x-api-key: $ANTHROPIC_API_KEY" \
+                -H "anthropic-version: 2023-06-01" \
+                -d "{
+                  \"model\": \"claude-haiku-4-5-20251001\",
+                  \"max_tokens\": 256,
+                  \"messages\": [{\"role\": \"user\", \"content\": $json_prompt}]
+                }" 2>/dev/null)
+            set response (echo "$response" | jq -r '.content[0].text // empty' 2>/dev/null)
+        case claude-code
+            # Use claude -p without session, isolated config dir
+            set -l claude_config_dir (_aish_claude_config_dir)
+            _aish_ensure_claude_config
+            set response (CLAUDE_CONFIG_DIR="$claude_config_dir" timeout 5 claude -p "$triage_prompt" --model claude-haiku-4-5-20251001 --output-format text --allowedTools '' 2>/dev/null)
+        case '*'
+            printf '\r\033[2K'
+            return 1
     end
 
-    # Clean up
-    set suggestion (_aish_strip_markdown "$suggestion")
+    # Clear indicator
+    printf '\r\033[2K'
 
-    set_color yellow
-    printf "Suggested fix: "
-    set_color normal
-    echo "$suggestion"
-    set_color brblack
-    read -n 1 -P "[e]xecute, [c]opy to prompt, [n]o? " action
-    set_color normal
+    _aish_debug "Error triage response: $response"
 
-    switch $action
-        case e E y Y
-            echo
-            eval $suggestion
-        case c C
-            echo
-            commandline -r "$suggestion"
-            commandline -f repaint
-        case '*'
-            echo
+    # Check for <correction> tags
+    if string match -q '*<correction>*</correction>*' -- "$response"
+        # Extract command between tags
+        set -l suggestion (string replace -r '.*<correction>(.*)</correction>.*' '$1' -- "$response")
+        set suggestion (string trim -- "$suggestion")
+
+        if test -n "$suggestion"; and test "$suggestion" != "$failed_cmd"
+            set_color yellow
+            printf "Suggested fix: "
+            set_color normal
+            echo "$suggestion"
+            set_color brblack
+            read -n 1 -P "[e]xecute, [c]opy to prompt, [n]o? " action
+            set_color normal
+
+            switch $action
+                case e E y Y
+                    echo
+                    eval $suggestion
+                case c C
+                    echo
+                    commandline -r "$suggestion"
+                    commandline -f repaint
+                case '*'
+                    echo
+            end
+        end
     end
 end
 
@@ -831,27 +774,14 @@ function _aish_fish_postexec --on-event fish_postexec
     test $_aish_last_status -eq 0; and return
     test -z "$_aish_last_command"; and return
 
-    # Only trap on specific exit codes (configurable)
-    set -l should_trap false
-    for code in $AISH_ERROR_TRAP_CODES
-        if test $_aish_last_status -eq $code
-            set should_trap true
-            break
-        end
+    # Fast-path: ignore signal exit codes (Ctrl+C, SIGPIPE, SIGTERM)
+    switch $_aish_last_status
+        case 130 141 143
+            set -g _aish_last_command ""
+            return
     end
-    test "$should_trap" != true; and return
 
-    # Offer correction
-    set_color red
-    echo "Command failed (exit $_aish_last_status)"
-    set_color brblack
-    read -n 1 -P "Ask AI for correction? [y/n] " ask
-    set_color normal
-
-    echo
-    if test "$ask" = y; or test "$ask" = Y
-        aish-correct "$_aish_last_command" "$_aish_last_status" ""
-    end
+    _aish_check_error "$_aish_last_command" "$_aish_last_status"
 
     set -g _aish_last_command ""
 end
