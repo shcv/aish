@@ -43,7 +43,8 @@ source /path/to/aish/aish.fish
 - `aish status` - Show current session info and backend status
 - `aish reset [--all]` - Reset session for current dir (--all for all sessions)
 - `aish compact` - Compact/summarize current session to reduce context
-- `aish config [key=val]` - Show or set configuration
+- `aish config [key=val]` - Show/set config (persists to `~/.config/aish/config`)
+- `aish config --session key=val` - Set config for current session only
 - `aish debug` - Toggle debug mode
 - `aish errors` - List recorded errors
 - `aish errors <id>` - View error details
@@ -54,11 +55,14 @@ source /path/to/aish/aish.fish
 
 ### Configuration
 
-- `AISH_BACKEND` - auto, claude-code, api (default: auto)
-- `AISH_MODEL` - sonnet, opus, haiku (default: sonnet)
-- `AISH_DEBUG` - true/false (default: false)
-- `AISH_HIGHLIGHTER` - auto, bat, batcat, none, or path (default: auto)
-- `AISH_DATA_DIR` - Data directory (default: $XDG_DATA_HOME/aish)
+Config file: `${XDG_CONFIG_HOME:-~/.config}/aish/config` (key=value format).
+Priority: env vars > config file > defaults.
+
+- `backend` - auto, claude-code, api (default: auto)
+- `model` - sonnet, opus, haiku (default: haiku)
+- `debug` - true/false (default: false)
+- `highlighter` - auto, bat, batcat, none, or path (default: auto)
+- `data-dir` - Data directory (default: $XDG_DATA_HOME/aish)
 
 ### Error Handling
 

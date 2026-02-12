@@ -1,12 +1,33 @@
 # aish.fish - AI Shell Integration for Fish
 # Source this file in your config.fish: source /path/to/aish.fish
 
-# Configuration (can be overridden before sourcing)
-set -q AISH_BACKEND; or set -g AISH_BACKEND auto          # auto, claude-code, api
-set -q AISH_MODEL; or set -g AISH_MODEL sonnet            # sonnet, opus, haiku
-set -q AISH_DEBUG; or set -g AISH_DEBUG false             # Show debug output
+# Configuration: env vars > config file > defaults
+set -g _aish_config_file (set -q XDG_CONFIG_HOME; and echo $XDG_CONFIG_HOME; or echo $HOME/.config)/aish/config
+if test -f "$_aish_config_file"
+    while read -l line
+        test -z "$line"; and continue
+        string match -q '#*' -- "$line"; and continue
+        set -l key (string split -m1 '=' -- "$line")[1]
+        set -l value (string split -m1 '=' -- "$line")[2]
+        switch $key
+            case backend
+                set -q AISH_BACKEND; or set -g AISH_BACKEND "$value"
+            case model
+                set -q AISH_MODEL; or set -g AISH_MODEL "$value"
+            case debug
+                set -q AISH_DEBUG; or set -g AISH_DEBUG "$value"
+            case highlighter
+                set -q AISH_HIGHLIGHTER; or set -g AISH_HIGHLIGHTER "$value"
+            case data-dir
+                set -q AISH_DATA_DIR; or set -g AISH_DATA_DIR "$value"
+        end
+    end < "$_aish_config_file"
+end
+set -q AISH_BACKEND; or set -g AISH_BACKEND auto
+set -q AISH_MODEL; or set -g AISH_MODEL haiku
+set -q AISH_DEBUG; or set -g AISH_DEBUG false
 set -q AISH_DATA_DIR; or set -g AISH_DATA_DIR (set -q XDG_DATA_HOME; and echo $XDG_DATA_HOME; or echo $HOME/.local/share)/aish
-set -q AISH_HIGHLIGHTER; or set -g AISH_HIGHLIGHTER auto  # auto, bat, batcat, none, or path
+set -q AISH_HIGHLIGHTER; or set -g AISH_HIGHLIGHTER auto
 
 # Session state (per-shell, not persisted)
 set -g _aish_session_id ""
@@ -229,6 +250,17 @@ end
 # Send prompt to AI and get response
 # Usage: _aish_query_ai <prompt> [allow_tools]
 # allow_tools: if "true", Claude can use bash/tools; otherwise tools are disabled
+function _aish_resolve_model
+    switch $AISH_MODEL
+        case opus
+            echo "claude-opus-4-6"
+        case haiku
+            echo "claude-haiku-4-5-20251001"
+        case '*'
+            echo "claude-sonnet-4-5-20250929"
+    end
+end
+
 function _aish_query_ai
     set -l prompt "$argv[1]"
     set -l allow_tools "$argv[2]"
@@ -242,7 +274,7 @@ function _aish_query_ai
     switch $backend
         case claude-code
             set -l claude_config_dir (_aish_claude_config_dir)
-            set -l claude_args -p "$prompt" --output-format text
+            set -l claude_args -p "$prompt" --output-format text --model "$AISH_MODEL"
 
             _aish_ensure_claude_config
 
@@ -284,12 +316,13 @@ function _aish_query_ai
         case api
             # Direct API call using curl
             set -l json_prompt (printf '%s' "$prompt" | jq -Rs .)
+            set -l api_model (_aish_resolve_model)
             set -l response (curl -s https://api.anthropic.com/v1/messages \
                 -H "Content-Type: application/json" \
                 -H "x-api-key: $ANTHROPIC_API_KEY" \
                 -H "anthropic-version: 2023-06-01" \
                 -d "{
-                  \"model\": \"claude-sonnet-4-20250514\",
+                  \"model\": \"$api_model\",
                   \"max_tokens\": 1024,
                   \"messages\": [{\"role\": \"user\", \"content\": $json_prompt}]
                 }" 2>/dev/null)
@@ -360,7 +393,7 @@ function _aish_cmd_help
     echo "  aish status      Show current session info and backend status"
     echo "  aish reset       Reset session for current dir (--all for all)"
     echo "  aish compact     Compact/summarize session to reduce context"
-    echo "  aish config      Show or set configuration"
+    echo "  aish config      Show/set config (--session for non-persistent)"
     echo "  aish debug       Toggle debug mode"
     echo
     set_color yellow
@@ -374,13 +407,12 @@ function _aish_cmd_help
     echo "  aish explain [id]     Explain error (default: latest)"
     echo
     set_color yellow
-    echo "Configuration:"
+    echo "Config keys:"
     set_color normal
-    echo "  AISH_BACKEND     auto, claude-code, api (current: $AISH_BACKEND)"
-    echo "  AISH_MODEL       sonnet, opus, haiku (current: $AISH_MODEL)"
-    echo "  AISH_DEBUG       true/false (current: $AISH_DEBUG)"
-    echo "  AISH_HIGHLIGHTER auto, bat, batcat, none (current: $AISH_HIGHLIGHTER)"
-    echo "  AISH_DATA_DIR    Data directory"
+    echo "  backend          auto, claude-code, api (current: $AISH_BACKEND)"
+    echo "  model            sonnet, opus, haiku (current: $AISH_MODEL)"
+    echo "  debug            true/false (current: $AISH_DEBUG)"
+    echo "  highlighter      auto, bat, batcat, none (current: $AISH_HIGHLIGHTER)"
 end
 
 function _aish_cmd_status
@@ -513,51 +545,72 @@ Please acknowledge you have this context and are ready to continue." >/dev/null
     end
 end
 
+function _aish_save_config_key
+    set -l key $argv[1]
+    set -l value $argv[2]
+    mkdir -p (dirname "$_aish_config_file")
+    if test -f "$_aish_config_file"; and grep -q "^$key=" "$_aish_config_file"
+        sed -i "s|^$key=.*|$key=$value|" "$_aish_config_file"
+    else
+        echo "$key=$value" >> "$_aish_config_file"
+    end
+end
+
 function _aish_cmd_config
+    set -l session_only false
+    if test "$argv[1]" = --session
+        set session_only true
+        set -e argv[1]
+    end
+
     set -l setting $argv[1]
-    set -e argv[1]
 
     if test -z "$setting"
-        # Show current config
         set_color cyan
-        echo "Current configuration:"
+        echo "Configuration:"
         set_color normal
-        echo "  AISH_BACKEND=$AISH_BACKEND"
-        echo "  AISH_MODEL=$AISH_MODEL"
-        echo "  AISH_DEBUG=$AISH_DEBUG"
-        echo "  AISH_HIGHLIGHTER=$AISH_HIGHLIGHTER"
-        echo "  AISH_DATA_DIR=$AISH_DATA_DIR"
+        echo "  backend:      $AISH_BACKEND"
+        echo "  model:        $AISH_MODEL"
+        echo "  debug:        $AISH_DEBUG"
+        echo "  highlighter:  $AISH_HIGHLIGHTER"
+        echo "  data-dir:     $AISH_DATA_DIR"
         return
     end
 
-    # Parse key=value
     set -l key (string split -m1 '=' -- "$setting")[1]
     set -l value (string split -m1 '=' -- "$setting")[2]
 
+    if test -z "$value"
+        _aish_error "Usage: aish config key=value"
+        return 1
+    end
+
     switch $key
-        case backend AISH_BACKEND
+        case backend
             set -g AISH_BACKEND "$value"
-            set_color green
-            echo "AISH_BACKEND=$value"
-            set_color normal
-        case model AISH_MODEL
+        case model
             set -g AISH_MODEL "$value"
-            set_color green
-            echo "AISH_MODEL=$value"
-            set_color normal
-        case debug AISH_DEBUG
+        case debug
             set -g AISH_DEBUG "$value"
-            set_color green
-            echo "AISH_DEBUG=$value"
-            set_color normal
-        case highlighter AISH_HIGHLIGHTER
+        case highlighter
             set -g AISH_HIGHLIGHTER "$value"
-            set_color green
-            echo "AISH_HIGHLIGHTER=$value"
-            set_color normal
         case '*'
             _aish_error "Unknown config key: $key"
+            _aish_error "Valid keys: backend, model, debug, highlighter"
             return 1
+    end
+
+    if test "$session_only" = true
+        set_color green
+        echo -n "$key: $value"
+        set_color brblack
+        echo " (session)"
+        set_color normal
+    else
+        _aish_save_config_key "$key" "$value"
+        set_color green
+        echo "$key: $value"
+        set_color normal
     end
 end
 

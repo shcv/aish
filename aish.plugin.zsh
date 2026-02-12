@@ -1,12 +1,26 @@
 # aish.plugin.zsh - AI Shell Integration for Zsh
 # Source this file in your .zshrc: source /path/to/aish.plugin.zsh
 
-# Configuration (can be overridden before sourcing)
-: ${AISH_BACKEND:=auto}          # auto, claude-code, api
-: ${AISH_MODEL:=sonnet}          # sonnet, opus, haiku
-: ${AISH_DEBUG:=false}           # Show debug output
-: ${AISH_DATA_DIR:=${XDG_DATA_HOME:-$HOME/.local/share}/aish}  # Data directory
-: ${AISH_HIGHLIGHTER:=auto}    # auto, bat, batcat, none, or path
+# Configuration: env vars > config file > defaults
+_aish_config_file="${XDG_CONFIG_HOME:-$HOME/.config}/aish/config"
+if [[ -f "$_aish_config_file" ]]; then
+  while IFS='=' read -r _aish_k _aish_v; do
+    [[ -z "$_aish_k" || "$_aish_k" == \#* ]] && continue
+    case "$_aish_k" in
+      backend)     : ${AISH_BACKEND:=$_aish_v} ;;
+      model)       : ${AISH_MODEL:=$_aish_v} ;;
+      debug)       : ${AISH_DEBUG:=$_aish_v} ;;
+      highlighter) : ${AISH_HIGHLIGHTER:=$_aish_v} ;;
+      data-dir)    : ${AISH_DATA_DIR:=$_aish_v} ;;
+    esac
+  done < "$_aish_config_file"
+  unset _aish_k _aish_v
+fi
+: ${AISH_BACKEND:=auto}
+: ${AISH_MODEL:=haiku}
+: ${AISH_DEBUG:=false}
+: ${AISH_DATA_DIR:=${XDG_DATA_HOME:-$HOME/.local/share}/aish}
+: ${AISH_HIGHLIGHTER:=auto}
 
 # Session state (per-shell, not persisted)
 _aish_session_id=""
@@ -230,6 +244,14 @@ _aish_detect_backend() {
 }
 
 # Send prompt to AI and get response
+_aish_resolve_model() {
+  case "$AISH_MODEL" in
+    opus)   echo "claude-opus-4-6" ;;
+    haiku)  echo "claude-haiku-4-5-20251001" ;;
+    *)      echo "claude-sonnet-4-5-20250929" ;;
+  esac
+}
+
 _aish_query_ai() {
   local prompt="$1"
   local allow_tools="${2:-false}"  # Whether to allow Claude to use bash/tools
@@ -245,7 +267,7 @@ _aish_query_ai() {
       local -a claude_args
 
       _aish_ensure_claude_config
-      claude_args=(-p "$prompt" --output-format text)
+      claude_args=(-p "$prompt" --output-format text --model "$AISH_MODEL")
 
       if [[ "$allow_tools" != "true" ]]; then
         claude_args+=(--allowedTools '')
@@ -290,7 +312,7 @@ _aish_query_ai() {
         -H "x-api-key: $ANTHROPIC_API_KEY" \
         -H "anthropic-version: 2023-06-01" \
         -d "{
-          \"model\": \"claude-sonnet-4-20250514\",
+          \"model\": \"$(_aish_resolve_model)\",
           \"max_tokens\": 1024,
           \"messages\": [{\"role\": \"user\", \"content\": $(printf '%s' "$prompt" | jq -Rs .)}]
         }" 2>/dev/null)
@@ -362,7 +384,7 @@ _aish_cmd_help() {
   print "  status           Show current session info and backend status"
   print "  reset [--all]    Reset session for current dir (--all for all sessions)"
   print "  compact          Compact/summarize current session to reduce context"
-  print "  config [key=val] Show or set configuration"
+  print "  config [key=val] Show/set config (--session for non-persistent)"
   print "  debug            Toggle debug mode"
   print "  help             Show this help"
   print ""
@@ -374,12 +396,11 @@ _aish_cmd_help() {
   print "  fix [id]         Generate fix for error (default: latest)"
   print "  explain [id]     Explain error (default: latest)"
   print ""
-  print -P "%F{yellow}Configuration:%f"
-  print "  AISH_BACKEND     auto, claude-code, api (current: $AISH_BACKEND)"
-  print "  AISH_MODEL       sonnet, opus, haiku (current: $AISH_MODEL)"
-  print "  AISH_DEBUG       true/false (current: $AISH_DEBUG)"
-  print "  AISH_HIGHLIGHTER auto, bat, batcat, none (current: $AISH_HIGHLIGHTER)"
-  print "  AISH_DATA_DIR    Data directory"
+  print -P "%F{yellow}Config keys:%f"
+  print "  backend          auto, claude-code, api (current: $AISH_BACKEND)"
+  print "  model            sonnet, opus, haiku (current: $AISH_MODEL)"
+  print "  debug            true/false (current: $AISH_DEBUG)"
+  print "  highlighter      auto, bat, batcat, none (current: $AISH_HIGHLIGHTER)"
 }
 
 _aish_cmd_status() {
@@ -482,47 +503,61 @@ Please acknowledge you have this context and are ready to continue."
   fi
 }
 
+_aish_save_config_key() {
+  local key="$1" value="$2"
+  mkdir -p "$(dirname "$_aish_config_file")"
+  if [[ -f "$_aish_config_file" ]] && grep -q "^${key}=" "$_aish_config_file"; then
+    sed -i "s|^${key}=.*|${key}=${value}|" "$_aish_config_file"
+  else
+    echo "${key}=${value}" >> "$_aish_config_file"
+  fi
+}
+
 _aish_cmd_config() {
+  local session_only=false
+  if [[ "$1" == "--session" ]]; then
+    session_only=true
+    shift
+  fi
+
   local setting="$1"
-  shift 2>/dev/null
 
   if [[ -z "$setting" ]]; then
-    # Show current config
-    print -P "%F{cyan}Current configuration:%f"
-    print "  AISH_BACKEND=$AISH_BACKEND"
-    print "  AISH_MODEL=$AISH_MODEL"
-    print "  AISH_DEBUG=$AISH_DEBUG"
-    print "  AISH_HIGHLIGHTER=$AISH_HIGHLIGHTER"
-    print "  AISH_DATA_DIR=$AISH_DATA_DIR"
+    print -P "%F{cyan}Configuration:%f"
+    print "  backend:      $AISH_BACKEND"
+    print "  model:        $AISH_MODEL"
+    print "  debug:        $AISH_DEBUG"
+    print "  highlighter:  $AISH_HIGHLIGHTER"
+    print "  data-dir:     $AISH_DATA_DIR"
     return
   fi
 
-  # Parse key=value
   local key="${setting%%=*}"
   local value="${setting#*=}"
 
+  if [[ "$key" == "$value" ]]; then
+    _aish_error "Usage: aish config key=value"
+    return 1
+  fi
+
   case "$key" in
-    backend|AISH_BACKEND)
-      AISH_BACKEND="$value"
-      print -P "%F{green}AISH_BACKEND=$value%f"
-      ;;
-    model|AISH_MODEL)
-      AISH_MODEL="$value"
-      print -P "%F{green}AISH_MODEL=$value%f"
-      ;;
-    debug|AISH_DEBUG)
-      AISH_DEBUG="$value"
-      print -P "%F{green}AISH_DEBUG=$value%f"
-      ;;
-    highlighter|AISH_HIGHLIGHTER)
-      AISH_HIGHLIGHTER="$value"
-      print -P "%F{green}AISH_HIGHLIGHTER=$value%f"
-      ;;
+    backend)     AISH_BACKEND="$value" ;;
+    model)       AISH_MODEL="$value" ;;
+    debug)       AISH_DEBUG="$value" ;;
+    highlighter) AISH_HIGHLIGHTER="$value" ;;
     *)
       _aish_error "Unknown config key: $key"
+      _aish_error "Valid keys: backend, model, debug, highlighter"
       return 1
       ;;
   esac
+
+  if [[ "$session_only" == "true" ]]; then
+    print -P "%F{green}$key: $value%f %F{240}(session)%f"
+  else
+    _aish_save_config_key "$key" "$value"
+    print -P "%F{green}$key: $value%f"
+  fi
 }
 
 _aish_cmd_debug() {
