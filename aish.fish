@@ -8,6 +8,10 @@ set -q AISH_DEBUG; or set -g AISH_DEBUG false             # Show debug output
 set -q AISH_DATA_DIR; or set -g AISH_DATA_DIR (set -q XDG_DATA_HOME; and echo $XDG_DATA_HOME; or echo $HOME/.local/share)/aish
 set -q AISH_HIGHLIGHTER; or set -g AISH_HIGHLIGHTER auto  # auto, bat, batcat, none, or path
 
+# Session state (per-shell, not persisted)
+set -g _aish_session_id ""
+set -g _aish_session_started false
+
 # Directory where this plugin lives
 set -g AISH_DIR (dirname (status filename))
 
@@ -34,35 +38,6 @@ function _aish_path_to_dirname
     string replace -a '/' '-' -- $argv[1]
 end
 
-# Get session directory for current working directory
-function _aish_session_dir
-    set -l dirname (_aish_path_to_dirname $PWD)
-    echo "$AISH_DATA_DIR/sessions/$dirname"
-end
-
-# Get session ID file path
-function _aish_session_file
-    echo (_aish_session_dir)/session-id
-end
-
-# Check if session has been started
-function _aish_session_exists
-    set -l started_file (_aish_session_dir)/started
-    test -f "$started_file"
-end
-
-# Mark session as started
-function _aish_mark_session_started
-    set -l started_file (_aish_session_dir)/started
-    touch "$started_file" 2>/dev/null
-end
-
-# Ensure session directory exists
-function _aish_ensure_session_dir
-    set -l dir (_aish_session_dir)
-    test -d "$dir"; or mkdir -p "$dir" 2>/dev/null
-end
-
 # Get Claude config directory for aish
 function _aish_claude_config_dir
     echo "$AISH_DATA_DIR/claude"
@@ -80,30 +55,6 @@ function _aish_ensure_claude_config
     if not test -e "$creds_file"; and test -f "$HOME/.claude/.credentials.json"
         ln -sf "$HOME/.claude/.credentials.json" "$creds_file" 2>/dev/null
         _aish_debug "Symlinked Claude credentials"
-    end
-end
-
-# Get or create session ID for current directory
-function _aish_get_session_id
-    set -l session_file (_aish_session_file)
-
-    if test -f "$session_file"
-        cat "$session_file"
-    else
-        # Generate a new UUID
-        set -l uuid
-        if command -v uuidgen >/dev/null 2>&1
-            set uuid (uuidgen | tr '[:upper:]' '[:lower:]')
-        else if test -f /proc/sys/kernel/random/uuid
-            set uuid (cat /proc/sys/kernel/random/uuid)
-        else
-            # Fallback: generate from random data
-            set uuid (od -x /dev/urandom | head -1 | awk '{print $2$3"-"$4"-"$5"-"$6"-"$7$8$9}')
-        end
-
-        _aish_ensure_session_dir
-        echo "$uuid" > "$session_file" 2>/dev/null
-        echo "$uuid"
     end
 end
 
@@ -290,35 +241,42 @@ function _aish_query_ai
 
     switch $backend
         case claude-code
-            set -l session_id (_aish_get_session_id)
             set -l claude_config_dir (_aish_claude_config_dir)
             set -l claude_args -p "$prompt" --output-format text
 
-            # Ensure our Claude config dir is set up
             _aish_ensure_claude_config
 
-            # Restrict tools for query-only mode (prevents accidental command execution)
             if test "$allow_tools" != true
                 set claude_args $claude_args --allowedTools ''
             end
 
-            _aish_debug "Session ID: $session_id"
-            _aish_debug "Claude config: $claude_config_dir"
+            # Generate session ID on first use
+            if test -z "$_aish_session_id"
+                if command -v uuidgen >/dev/null 2>&1
+                    set -g _aish_session_id (uuidgen | tr '[:upper:]' '[:lower:]')
+                else if test -f /proc/sys/kernel/random/uuid
+                    set -g _aish_session_id (cat /proc/sys/kernel/random/uuid)
+                else
+                    set -g _aish_session_id (od -x /dev/urandom | head -1 | awk '{print $2$3"-"$4"-"$5"-"$6"-"$7$8$9}')
+                end
+            end
 
-            if _aish_session_exists
-                # Continue existing session
-                _aish_debug "Resuming existing session"
-                set claude_args $claude_args --resume "$session_id"
+            _aish_debug "Session ID: $_aish_session_id"
+            _aish_debug "Claude config: $claude_config_dir"
+            _aish_debug "Allow tools: $allow_tools"
+
+            if test "$_aish_session_started" = true
+                _aish_debug "Resuming session"
+                set claude_args $claude_args --resume "$_aish_session_id"
             else
-                # Start new session with our ID
                 _aish_debug "Starting new session"
-                set claude_args $claude_args --session-id "$session_id"
+                set claude_args $claude_args --session-id "$_aish_session_id"
             end
 
             set -l result (CLAUDE_CONFIG_DIR="$claude_config_dir" claude $claude_args 2>/dev/null)
 
-            if not _aish_session_exists
-                _aish_mark_session_started
+            if test -n "$result"
+                set -g _aish_session_started true
             end
 
             echo "$result"
@@ -362,10 +320,6 @@ function aish -d "AI Shell Integration"
             _aish_cmd_reset $argv
         case compact
             _aish_cmd_compact
-        case sessions list
-            _aish_cmd_sessions
-        case switch
-            _aish_cmd_switch $argv
         case config
             _aish_cmd_config $argv
         case debug
@@ -406,8 +360,6 @@ function _aish_cmd_help
     echo "  aish status      Show current session info and backend status"
     echo "  aish reset       Reset session for current dir (--all for all)"
     echo "  aish compact     Compact/summarize session to reduce context"
-    echo "  aish sessions    List all sessions"
-    echo "  aish switch <id> Switch to a different session"
     echo "  aish config      Show or set configuration"
     echo "  aish debug       Toggle debug mode"
     echo
@@ -432,8 +384,6 @@ function _aish_cmd_help
 end
 
 function _aish_cmd_status
-    set -l session_id (_aish_get_session_id)
-    set -l session_dir (_aish_session_dir)
     set -l claude_config_dir (_aish_claude_config_dir)
     set -l backend (_aish_detect_backend)
 
@@ -444,13 +394,16 @@ function _aish_cmd_status
     set_color yellow
     echo "Session:"
     set_color normal
-    echo "  Directory:    $PWD"
-    echo "  Session ID:   $session_id"
-    echo -n "  Active:       "
-    if _aish_session_exists
-        echo "yes"
+    if test -n "$_aish_session_id"
+        echo "  Session ID:   $_aish_session_id"
+        echo -n "  Active:       "
+        if test "$_aish_session_started" = true
+            echo "yes"
+        else
+            echo "no"
+        end
     else
-        echo "no"
+        echo "  Session ID:   (none)"
     end
     echo
     set_color yellow
@@ -458,16 +411,14 @@ function _aish_cmd_status
     set_color normal
     echo "  Type:         $backend"
 
-    if test "$backend" = claude-code
-        set -l session_file "$claude_config_dir/projects/"(_aish_path_to_dirname $PWD)"/$session_id.jsonl"
+    if test "$backend" = claude-code -a -n "$_aish_session_id"
+        set -l session_file "$claude_config_dir/projects/"(_aish_path_to_dirname $PWD)"/$_aish_session_id.jsonl"
         if test -f "$session_file"
             set -l line_count (wc -l < "$session_file" 2>/dev/null; or echo 0)
             set -l file_size (du -h "$session_file" 2>/dev/null | cut -f1; or echo unknown)
             echo "  Session file: $session_file"
             echo "  Messages:     ~"(math "$line_count / 2")
             echo "  Size:         $file_size"
-        else
-            echo "  Session file: (not yet created)"
         end
     end
 
@@ -500,39 +451,29 @@ function _aish_cmd_reset
         set all true
     end
 
+    set -g _aish_session_id ""
+    set -g _aish_session_started false
+
     if test $all = true
         set_color yellow
-        read -n 1 -P "Reset ALL sessions? This cannot be undone. [y/N] " confirm
+        read -n 1 -P "Delete all stored session data? [y/N] " confirm
         set_color normal
         if test "$confirm" = y; or test "$confirm" = Y
             echo
-            rm -rf "$AISH_DATA_DIR/sessions"
-            rm -rf "$AISH_DATA_DIR/claude/projects"
+            rm -rf "$AISH_DATA_DIR/sessions" "$AISH_DATA_DIR/claude/projects"
             set_color green
-            echo "All sessions cleared"
+            echo "Session reset, stored data cleared"
             set_color normal
         else
             echo
-            set_color brblack
-            echo "Cancelled"
+            set_color green
+            echo "Session reset"
             set_color normal
         end
     else
-        set -l session_dir (_aish_session_dir)
-        set -l claude_session_dir "$AISH_DATA_DIR/claude/projects/"(_aish_path_to_dirname $PWD)
-
-        if test -d "$session_dir"
-            rm -rf "$session_dir"
-            # Also remove Claude's session data
-            test -d "$claude_session_dir"; and rm -rf "$claude_session_dir"
-            set_color green
-            echo "Session reset for $PWD"
-            set_color normal
-        else
-            set_color yellow
-            echo "No session to reset"
-            set_color normal
-        end
+        set_color green
+        echo "Session reset"
+        set_color normal
     end
 end
 
@@ -542,7 +483,7 @@ function _aish_cmd_compact
         return 1
     end
 
-    if not _aish_session_exists
+    if test "$_aish_session_started" != true
         set_color yellow
         echo "No active session to compact"
         set_color normal
@@ -553,14 +494,12 @@ function _aish_cmd_compact
     echo "Compacting session..."
     set_color normal
 
-    # Ask Claude to summarize the conversation
     set -l summary (_aish_query_ai "Please provide a brief summary of our conversation so far, including any important context, decisions, or information I've shared. This will be used to continue our conversation with reduced context. Keep it concise but include key details.")
 
     if test -n "$summary"
-        # Reset session
-        _aish_cmd_reset
+        set -g _aish_session_id ""
+        set -g _aish_session_started false
 
-        # Start new session with the summary as context
         _aish_query_ai "Here's a summary of our previous conversation for context: $summary
 
 Please acknowledge you have this context and are ready to continue." >/dev/null
@@ -572,97 +511,6 @@ Please acknowledge you have this context and are ready to continue." >/dev/null
         _aish_error "Failed to compact session"
         return 1
     end
-end
-
-function _aish_cmd_sessions
-    set -l sessions_dir "$AISH_DATA_DIR/sessions"
-
-    if not test -d "$sessions_dir"
-        set_color yellow
-        echo "No sessions found"
-        set_color normal
-        return
-    end
-
-    set_color cyan
-    echo "Sessions:"
-    set_color normal
-    echo
-
-    set -l current_dirname (_aish_path_to_dirname $PWD)
-
-    for dir in $sessions_dir/*/
-        test -d "$dir"; or continue
-        set -l dirname (basename "$dir")
-        set -l session_id (cat "$dir/session-id" 2>/dev/null; or echo unknown)
-        set -l started
-        if test -f "$dir/started"
-            set started active
-        else
-            set started new
-        end
-
-        set -l marker ""
-        if test "$dirname" = "$current_dirname"
-            set marker " (current)"
-        end
-
-        # Convert dirname back to path for display
-        set -l display_path "/"(string replace -a '-' '/' -- "$dirname")
-
-        set_color yellow
-        echo -n "  $session_id"
-        set_color normal
-        echo " $started"
-        echo -n "    $display_path"
-        if test -n "$marker"
-            set_color green
-            echo "$marker"
-            set_color normal
-        else
-            echo
-        end
-    end
-end
-
-function _aish_cmd_switch
-    set -l target $argv[1]
-
-    if test -z "$target"
-        set_color yellow
-        echo "Usage: aish switch <session-id or path>"
-        set_color normal
-        return 1
-    end
-
-    set -l sessions_dir "$AISH_DATA_DIR/sessions"
-
-    # Check if it's a session ID
-    for dir in $sessions_dir/*/
-        test -d "$dir"; or continue
-        set -l session_id (cat "$dir/session-id" 2>/dev/null)
-        if string match -q "$target*" "$session_id"
-            set -l dirname (basename "$dir")
-            set -l target_path "/"(string replace -a '-' '/' -- "$dirname")
-            set_color cyan
-            echo "Switching to: $target_path"
-            set_color normal
-            cd "$target_path" 2>/dev/null; or begin
-                _aish_error "Directory not found: $target_path"
-                return 1
-            end
-            return 0
-        end
-    end
-
-    # Check if it's a path
-    if test -d "$target"
-        cd "$target"
-        return 0
-    end
-
-    _aish_error "Session or path not found: $target"
-    return 1
 end
 
 function _aish_cmd_config
@@ -1150,8 +998,6 @@ complete -c aish -n "__fish_use_subcommand" -a "help" -d "Show help"
 complete -c aish -n "__fish_use_subcommand" -a "status" -d "Show session info"
 complete -c aish -n "__fish_use_subcommand" -a "reset" -d "Reset session"
 complete -c aish -n "__fish_use_subcommand" -a "compact" -d "Compact session"
-complete -c aish -n "__fish_use_subcommand" -a "sessions" -d "List sessions"
-complete -c aish -n "__fish_use_subcommand" -a "switch" -d "Switch session"
 complete -c aish -n "__fish_use_subcommand" -a "config" -d "Show/set config"
 complete -c aish -n "__fish_use_subcommand" -a "debug" -d "Toggle debug"
 complete -c aish -n "__fish_use_subcommand" -a "errors" -d "List/manage errors"

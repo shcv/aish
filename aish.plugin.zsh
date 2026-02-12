@@ -8,6 +8,10 @@
 : ${AISH_DATA_DIR:=${XDG_DATA_HOME:-$HOME/.local/share}/aish}  # Data directory
 : ${AISH_HIGHLIGHTER:=auto}    # auto, bat, batcat, none, or path
 
+# Session state (per-shell, not persisted)
+_aish_session_id=""
+_aish_session_started=false
+
 # Directory where this plugin lives
 AISH_DIR="${0:A:h}"
 
@@ -30,35 +34,6 @@ _aish_path_to_dirname() {
   echo "${path//\//-}"
 }
 
-# Get session directory for current working directory
-_aish_session_dir() {
-  local dirname=$(_aish_path_to_dirname "$PWD")
-  echo "${AISH_DATA_DIR}/sessions/${dirname}"
-}
-
-# Get session ID file path
-_aish_session_file() {
-  echo "$(_aish_session_dir)/session-id"
-}
-
-# Check if session has been started
-_aish_session_exists() {
-  local started_file="$(_aish_session_dir)/started"
-  [[ -f "$started_file" ]]
-}
-
-# Mark session as started
-_aish_mark_session_started() {
-  local started_file="$(_aish_session_dir)/started"
-  touch "$started_file" 2>/dev/null
-}
-
-# Ensure session directory exists
-_aish_ensure_session_dir() {
-  local dir=$(_aish_session_dir)
-  [[ -d "$dir" ]] || mkdir -p "$dir" 2>/dev/null
-}
-
 # Get Claude config directory for aish
 _aish_claude_config_dir() {
   echo "${AISH_DATA_DIR}/claude"
@@ -76,30 +51,6 @@ _aish_ensure_claude_config() {
   if [[ ! -e "$creds_file" ]] && [[ -f "$HOME/.claude/.credentials.json" ]]; then
     ln -sf "$HOME/.claude/.credentials.json" "$creds_file" 2>/dev/null
     _aish_debug "Symlinked Claude credentials"
-  fi
-}
-
-# Get or create session ID for current directory
-_aish_get_session_id() {
-  local session_file=$(_aish_session_file)
-
-  if [[ -f "$session_file" ]]; then
-    cat "$session_file"
-  else
-    # Generate a new UUID using various methods
-    local uuid
-    if command -v uuidgen &>/dev/null; then
-      uuid=$(uuidgen | tr '[:upper:]' '[:lower:]')
-    elif [[ -f /proc/sys/kernel/random/uuid ]]; then
-      uuid=$(cat /proc/sys/kernel/random/uuid)
-    else
-      # Fallback: generate from random data
-      uuid=$(od -x /dev/urandom | head -1 | awk '{print $2$3"-"$4"-"$5"-"$6"-"$7$8$9}')
-    fi
-
-    _aish_ensure_session_dir
-    echo "$uuid" > "$session_file" 2>/dev/null
-    echo "$uuid"
   fi
 }
 
@@ -289,40 +240,44 @@ _aish_query_ai() {
 
   case "$backend" in
     claude-code)
-      local session_id=$(_aish_get_session_id)
       local claude_config_dir=$(_aish_claude_config_dir)
       local result
       local -a claude_args
 
-      # Ensure our Claude config dir is set up
       _aish_ensure_claude_config
-
-      # Build base arguments
       claude_args=(-p "$prompt" --output-format text)
 
-      # Restrict tools for query-only mode (prevents accidental command execution)
       if [[ "$allow_tools" != "true" ]]; then
         claude_args+=(--allowedTools '')
       fi
 
-      _aish_debug "Session ID: $session_id"
+      # Generate session ID on first use
+      if [[ -z "$_aish_session_id" ]]; then
+        if command -v uuidgen &>/dev/null; then
+          _aish_session_id=$(uuidgen | tr '[:upper:]' '[:lower:]')
+        elif [[ -f /proc/sys/kernel/random/uuid ]]; then
+          _aish_session_id=$(cat /proc/sys/kernel/random/uuid)
+        else
+          _aish_session_id=$(od -x /dev/urandom | head -1 | awk '{print $2$3"-"$4"-"$5"-"$6"-"$7$8$9}')
+        fi
+      fi
+
+      _aish_debug "Session ID: $_aish_session_id"
       _aish_debug "Claude config: $claude_config_dir"
       _aish_debug "Allow tools: $allow_tools"
 
-      if _aish_session_exists; then
-        # Continue existing session
-        _aish_debug "Resuming existing session"
-        claude_args+=(--resume "$session_id")
+      if [[ "$_aish_session_started" == "true" ]]; then
+        _aish_debug "Resuming session"
+        claude_args+=(--resume "$_aish_session_id")
       else
-        # Start new session with our ID
         _aish_debug "Starting new session"
-        claude_args+=(--session-id "$session_id")
+        claude_args+=(--session-id "$_aish_session_id")
       fi
 
       result=$(CLAUDE_CONFIG_DIR="$claude_config_dir" claude "${claude_args[@]}" 2>/dev/null)
 
-      if ! _aish_session_exists; then
-        _aish_mark_session_started
+      if [[ -n "$result" ]]; then
+        _aish_session_started=true
       fi
 
       echo "$result"
@@ -370,12 +325,6 @@ aish() {
     compact)
       _aish_cmd_compact
       ;;
-    sessions|list)
-      _aish_cmd_sessions
-      ;;
-    switch)
-      _aish_cmd_switch "$@"
-      ;;
     config)
       _aish_cmd_config "$@"
       ;;
@@ -413,8 +362,6 @@ _aish_cmd_help() {
   print "  status           Show current session info and backend status"
   print "  reset [--all]    Reset session for current dir (--all for all sessions)"
   print "  compact          Compact/summarize current session to reduce context"
-  print "  sessions         List all sessions"
-  print "  switch <id>      Switch to a different session"
   print "  config [key=val] Show or set configuration"
   print "  debug            Toggle debug mode"
   print "  help             Show this help"
@@ -436,32 +383,30 @@ _aish_cmd_help() {
 }
 
 _aish_cmd_status() {
-  local session_id=$(_aish_get_session_id)
-  local session_dir=$(_aish_session_dir)
   local claude_config_dir=$(_aish_claude_config_dir)
   local backend=$(_aish_detect_backend)
 
   print -P "%F{cyan}aish status%f"
   print ""
   print -P "%F{yellow}Session:%f"
-  print "  Directory:    $PWD"
-  print "  Session ID:   $session_id"
-  print "  Active:       $(_aish_session_exists && echo "yes" || echo "no")"
+  if [[ -n "$_aish_session_id" ]]; then
+    print "  Session ID:   $_aish_session_id"
+    print "  Active:       $([[ "$_aish_session_started" == "true" ]] && echo "yes" || echo "no")"
+  else
+    print "  Session ID:   (none)"
+  fi
   print ""
   print -P "%F{yellow}Backend:%f"
   print "  Type:         $backend"
 
-  if [[ "$backend" == "claude-code" ]]; then
-    # Try to get session info from Claude
-    local session_file="${claude_config_dir}/projects/$(_aish_path_to_dirname "$PWD")/${session_id}.jsonl"
+  if [[ "$backend" == "claude-code" && -n "$_aish_session_id" ]]; then
+    local session_file="${claude_config_dir}/projects/$(_aish_path_to_dirname "$PWD")/${_aish_session_id}.jsonl"
     if [[ -f "$session_file" ]]; then
       local line_count=$(wc -l < "$session_file" 2>/dev/null || echo "0")
       local file_size=$(du -h "$session_file" 2>/dev/null | cut -f1 || echo "unknown")
       print "  Session file: $session_file"
       print "  Messages:     ~$((line_count / 2))"
       print "  Size:         $file_size"
-    else
-      print "  Session file: (not yet created)"
     fi
   fi
 
@@ -488,30 +433,21 @@ _aish_cmd_reset() {
   local all=false
   [[ "$1" == "--all" || "$1" == "-a" ]] && all=true
 
+  _aish_session_id=""
+  _aish_session_started=false
+
   if $all; then
-    print -P "%F{yellow}Reset ALL sessions? This cannot be undone. [y/N]%f"
+    print -P "%F{yellow}Delete all stored session data? [y/N]%f"
     read -k1 confirm
     echo
     if [[ "$confirm" == "y" || "$confirm" == "Y" ]]; then
-      rm -rf "${AISH_DATA_DIR}/sessions"
-      rm -rf "${AISH_DATA_DIR}/claude/projects"
-      print -P "%F{green}All sessions cleared%f"
+      rm -rf "${AISH_DATA_DIR}/sessions" "${AISH_DATA_DIR}/claude/projects"
+      print -P "%F{green}Session reset, stored data cleared%f"
     else
-      print -P "%F{240}Cancelled%f"
+      print -P "%F{green}Session reset%f"
     fi
   else
-    local session_dir=$(_aish_session_dir)
-    local session_id=$(_aish_get_session_id)
-    local claude_session_dir="${AISH_DATA_DIR}/claude/projects/$(_aish_path_to_dirname "$PWD")"
-
-    if [[ -d "$session_dir" ]]; then
-      rm -rf "$session_dir"
-      # Also remove Claude's session data
-      [[ -d "$claude_session_dir" ]] && rm -rf "$claude_session_dir"
-      print -P "%F{green}Session reset for $PWD%f"
-    else
-      print -P "%F{yellow}No session to reset%f"
-    fi
+    print -P "%F{green}Session reset%f"
   fi
 }
 
@@ -521,24 +457,20 @@ _aish_cmd_compact() {
     return 1
   fi
 
-  local session_id=$(_aish_get_session_id)
-
-  if ! _aish_session_exists; then
+  if [[ "$_aish_session_started" != "true" ]]; then
     print -P "%F{yellow}No active session to compact%f"
     return 1
   fi
 
   print -P "%F{cyan}Compacting session...%f"
 
-  # Ask Claude to summarize the conversation so we can start fresh with context
   local summary
   summary=$(_aish_query_ai "Please provide a brief summary of our conversation so far, including any important context, decisions, or information I've shared. This will be used to continue our conversation with reduced context. Keep it concise but include key details.")
 
   if [[ -n "$summary" ]]; then
-    # Reset session
-    _aish_cmd_reset
+    _aish_session_id=""
+    _aish_session_started=false
 
-    # Start new session with the summary as context
     _aish_query_ai "Here's a summary of our previous conversation for context: $summary
 
 Please acknowledge you have this context and are ready to continue."
@@ -548,71 +480,6 @@ Please acknowledge you have this context and are ready to continue."
     _aish_error "Failed to compact session"
     return 1
   fi
-}
-
-_aish_cmd_sessions() {
-  local sessions_dir="${AISH_DATA_DIR}/sessions"
-
-  if [[ ! -d "$sessions_dir" ]]; then
-    print -P "%F{yellow}No sessions found%f"
-    return
-  fi
-
-  print -P "%F{cyan}Sessions:%f"
-  print ""
-
-  local current_dirname=$(_aish_path_to_dirname "$PWD")
-
-  for dir in "$sessions_dir"/*(N); do
-    [[ -d "$dir" ]] || continue
-    local dirname="${dir:t}"
-    local session_id=$(cat "$dir/session-id" 2>/dev/null || echo "unknown")
-    local started=$(test -f "$dir/started" && echo "active" || echo "new")
-    local marker=""
-    [[ "$dirname" == "$current_dirname" ]] && marker=" %F{green}(current)%f"
-
-    # Convert dirname back to path for display
-    local display_path="/${dirname//-//}"
-
-    print -P "  %F{yellow}$session_id%f $started"
-    print -P "    $display_path$marker"
-  done
-}
-
-_aish_cmd_switch() {
-  local target="$1"
-
-  if [[ -z "$target" ]]; then
-    print -P "%F{yellow}Usage: aish switch <session-id or path>%f"
-    return 1
-  fi
-
-  local sessions_dir="${AISH_DATA_DIR}/sessions"
-
-  # Check if it's a session ID
-  for dir in "$sessions_dir"/*(N); do
-    [[ -d "$dir" ]] || continue
-    local session_id=$(cat "$dir/session-id" 2>/dev/null)
-    if [[ "$session_id" == "$target"* ]]; then
-      local dirname="${dir:t}"
-      local target_path="/${dirname//-//}"
-      print -P "%F{cyan}Switching to: $target_path%f"
-      cd "$target_path" 2>/dev/null || {
-        _aish_error "Directory not found: $target_path"
-        return 1
-      }
-      return 0
-    fi
-  done
-
-  # Check if it's a path
-  if [[ -d "$target" ]]; then
-    cd "$target"
-    return 0
-  fi
-
-  _aish_error "Session or path not found: $target"
-  return 1
 }
 
 _aish_cmd_config() {

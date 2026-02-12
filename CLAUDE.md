@@ -43,8 +43,6 @@ source /path/to/aish/aish.fish
 - `aish status` - Show current session info and backend status
 - `aish reset [--all]` - Reset session for current dir (--all for all sessions)
 - `aish compact` - Compact/summarize current session to reduce context
-- `aish sessions` - List all sessions
-- `aish switch <id>` - Switch to a different session
 - `aish config [key=val]` - Show or set configuration
 - `aish debug` - Toggle debug mode
 - `aish errors` - List recorded errors
@@ -71,8 +69,8 @@ Failed commands are passively recorded to `$AISH_DATA_DIR/errors/`. Signal exits
 Both plugins extend their respective shells rather than wrapping them, so shell state (variables, jobs, functions, aliases) is fully preserved.
 
 ### Session Management
-- Sessions are per-directory, stored in `$XDG_DATA_HOME/aish/sessions/`
-- Each session has a UUID stored in `session-id` file
+- Sessions are per-shell (tied to the current shell process, not persisted)
+- Each shell generates a new UUID on first AI query
 - Claude config isolated to `$XDG_DATA_HOME/aish/claude/` with symlinked credentials
 
 ### Backend
