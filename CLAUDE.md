@@ -59,6 +59,7 @@ source /path/to/aish/aish.fish
 - `AISH_BACKEND` - auto, claude-code, api (default: auto)
 - `AISH_MODEL` - sonnet, opus, haiku (default: sonnet)
 - `AISH_DEBUG` - true/false (default: false)
+- `AISH_HIGHLIGHTER` - auto, bat, batcat, none, or path (default: auto)
 - `AISH_DATA_DIR` - Data directory (default: $XDG_DATA_HOME/aish)
 
 ### Error Handling

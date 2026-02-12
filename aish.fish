@@ -6,6 +6,7 @@ set -q AISH_BACKEND; or set -g AISH_BACKEND auto          # auto, claude-code, a
 set -q AISH_MODEL; or set -g AISH_MODEL sonnet            # sonnet, opus, haiku
 set -q AISH_DEBUG; or set -g AISH_DEBUG false             # Show debug output
 set -q AISH_DATA_DIR; or set -g AISH_DATA_DIR (set -q XDG_DATA_HOME; and echo $XDG_DATA_HOME; or echo $HOME/.local/share)/aish
+set -q AISH_HIGHLIGHTER; or set -g AISH_HIGHLIGHTER auto  # auto, bat, batcat, none, or path
 
 # Directory where this plugin lives
 set -g AISH_DIR (dirname (status filename))
@@ -192,6 +193,69 @@ function _aish_relative_time
     end
 end
 
+# Resolve AISH_HIGHLIGHTER to an actual command
+function _aish_find_highlighter
+    switch "$AISH_HIGHLIGHTER"
+        case auto ''
+            if command -v bat >/dev/null 2>&1
+                echo bat
+            else if command -v batcat >/dev/null 2>&1
+                echo batcat
+            end
+        case none
+            # No highlighting
+        case '*'
+            echo "$AISH_HIGHLIGHTER"
+    end
+end
+
+# Render AI output with syntax highlighting for code blocks
+function _aish_render_output
+    set -l text "$argv"
+    set -l highlighter (_aish_find_highlighter)
+    set -l in_code false
+    set -l lang ""
+    set -l code_buf
+
+    for line in (string split \n -- "$text")
+        if test $in_code = true
+            if string match -qr '^```\s*$' -- "$line"
+                if test -n "$highlighter" -a -n "$lang"
+                    printf '%s\n' $code_buf | $highlighter --color=always --style=plain --paging=never --language=$lang
+                else
+                    set_color yellow
+                    printf '%s\n' $code_buf
+                    set_color normal
+                end
+                set in_code false
+                set lang ""
+                set code_buf
+            else
+                set -a code_buf "$line"
+            end
+        else
+            if string match -qr '^```' -- "$line"
+                set lang (string replace -r '^```' '' -- "$line" | string trim)
+                set in_code true
+                set code_buf
+            else
+                set_color cyan
+                printf '%s\n' "$line"
+                set_color normal
+            end
+        end
+    end
+
+    # Handle unclosed code block
+    if test $in_code = true
+        if set -q code_buf[1]
+            set_color yellow
+            printf '%s\n' $code_buf
+            set_color normal
+        end
+    end
+end
+
 # Detect which backend to use
 function _aish_detect_backend
     if test "$AISH_BACKEND" != auto
@@ -363,6 +427,7 @@ function _aish_cmd_help
     echo "  AISH_BACKEND     auto, claude-code, api (current: $AISH_BACKEND)"
     echo "  AISH_MODEL       sonnet, opus, haiku (current: $AISH_MODEL)"
     echo "  AISH_DEBUG       true/false (current: $AISH_DEBUG)"
+    echo "  AISH_HIGHLIGHTER auto, bat, batcat, none (current: $AISH_HIGHLIGHTER)"
     echo "  AISH_DATA_DIR    Data directory"
 end
 
@@ -612,6 +677,7 @@ function _aish_cmd_config
         echo "  AISH_BACKEND=$AISH_BACKEND"
         echo "  AISH_MODEL=$AISH_MODEL"
         echo "  AISH_DEBUG=$AISH_DEBUG"
+        echo "  AISH_HIGHLIGHTER=$AISH_HIGHLIGHTER"
         echo "  AISH_DATA_DIR=$AISH_DATA_DIR"
         return
     end
@@ -635,6 +701,11 @@ function _aish_cmd_config
             set -g AISH_DEBUG "$value"
             set_color green
             echo "AISH_DEBUG=$value"
+            set_color normal
+        case highlighter AISH_HIGHLIGHTER
+            set -g AISH_HIGHLIGHTER "$value"
+            set_color green
+            echo "AISH_HIGHLIGHTER=$value"
             set_color normal
         case '*'
             _aish_error "Unknown config key: $key"
@@ -784,11 +855,8 @@ Question: $query"
 
     if test -n "$answer"
         # Move up one line, clear it, and print answer
-        # Use printf to avoid interpreting escapes in the answer
         printf '\033[1A\033[2K'
-        set_color cyan
-        printf '%s\n' "$answer"
-        set_color normal
+        _aish_render_output "$answer"
     else
         printf '\033[1A\033[2K'
         set_color red
@@ -960,9 +1028,7 @@ Directory: $_aish_err_dir"
 
     if test -n "$answer"
         printf '\033[1A\033[2K'
-        set_color cyan
-        printf '%s\n' "$answer"
-        set_color normal
+        _aish_render_output "$answer"
     else
         printf '\033[1A\033[2K'
         set_color red

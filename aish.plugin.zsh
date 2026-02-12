@@ -6,6 +6,7 @@
 : ${AISH_MODEL:=sonnet}          # sonnet, opus, haiku
 : ${AISH_DEBUG:=false}           # Show debug output
 : ${AISH_DATA_DIR:=${XDG_DATA_HOME:-$HOME/.local/share}/aish}  # Data directory
+: ${AISH_HIGHLIGHTER:=auto}    # auto, bat, batcat, none, or path
 
 # Directory where this plugin lives
 AISH_DIR="${0:A:h}"
@@ -190,6 +191,74 @@ _aish_relative_time() {
   fi
 }
 
+# Resolve AISH_HIGHLIGHTER to an actual command
+_aish_find_highlighter() {
+  case "$AISH_HIGHLIGHTER" in
+    auto|"")
+      if command -v bat &>/dev/null; then
+        echo bat
+      elif command -v batcat &>/dev/null; then
+        echo batcat
+      fi
+      ;;
+    none)
+      ;;
+    *)
+      echo "$AISH_HIGHLIGHTER"
+      ;;
+  esac
+}
+
+# Render AI output with syntax highlighting for code blocks
+_aish_render_output() {
+  local text="$1"
+  local highlighter
+  highlighter=$(_aish_find_highlighter)
+  local in_code=false
+  local lang=""
+  local code_buf=""
+
+  while IFS= read -r line; do
+    if $in_code; then
+      if [[ "$line" =~ '^```[[:space:]]*$' ]]; then
+        if [[ -n "$highlighter" && -n "$lang" ]]; then
+          printf '%s\n' "$code_buf" | "$highlighter" --color=always --style=plain --paging=never --language="$lang"
+        else
+          print -P -n "%F{yellow}"
+          printf '%s\n' "$code_buf"
+          print -P -n "%f"
+        fi
+        in_code=false
+        lang=""
+        code_buf=""
+      else
+        if [[ -n "$code_buf" ]]; then
+          code_buf="$code_buf"$'\n'"$line"
+        else
+          code_buf="$line"
+        fi
+      fi
+    else
+      if [[ "$line" =~ '^```([a-zA-Z0-9_+-]*)' ]]; then
+        lang="${match[1]}"
+        in_code=true
+        code_buf=""
+      else
+        print -P -n "%F{cyan}"
+        print -r -- "$line"
+        print -P -n "%f"
+      fi
+    fi
+  done <<< "$text"
+
+  # Handle unclosed code block
+  if $in_code && [[ -n "$code_buf" ]]; then
+    print -P -n "%F{yellow}"
+    printf '%s\n' "$code_buf"
+    print -P -n "%f"
+  fi
+}
+
 # Detect which backend to use
 _aish_detect_backend() {
   if [[ "$AISH_BACKEND" != "auto" ]]; then
@@ -362,6 +431,7 @@ _aish_cmd_help() {
   print "  AISH_BACKEND     auto, claude-code, api (current: $AISH_BACKEND)"
   print "  AISH_MODEL       sonnet, opus, haiku (current: $AISH_MODEL)"
   print "  AISH_DEBUG       true/false (current: $AISH_DEBUG)"
+  print "  AISH_HIGHLIGHTER auto, bat, batcat, none (current: $AISH_HIGHLIGHTER)"
   print "  AISH_DATA_DIR    Data directory"
 }
 
@@ -555,6 +625,7 @@ _aish_cmd_config() {
     print "  AISH_BACKEND=$AISH_BACKEND"
     print "  AISH_MODEL=$AISH_MODEL"
     print "  AISH_DEBUG=$AISH_DEBUG"
+    print "  AISH_HIGHLIGHTER=$AISH_HIGHLIGHTER"
     print "  AISH_DATA_DIR=$AISH_DATA_DIR"
     return
   fi
@@ -575,6 +646,10 @@ _aish_cmd_config() {
     debug|AISH_DEBUG)
       AISH_DEBUG="$value"
       print -P "%F{green}AISH_DEBUG=$value%f"
+      ;;
+    highlighter|AISH_HIGHLIGHTER)
+      AISH_HIGHLIGHTER="$value"
+      print -P "%F{green}AISH_HIGHLIGHTER=$value%f"
       ;;
     *)
       _aish_error "Unknown config key: $key"
@@ -707,11 +782,8 @@ Question: $query"
 
   if [[ -n "$answer" ]]; then
     # Clear the "Thinking..." line and print answer
-    # Use print -r to avoid interpreting escapes in the answer
     print -n "\033[1A\033[2K"
-    print -P -n "%F{cyan}"
-    print -r -- "$answer"
-    print -P -n "%f"
+    _aish_render_output "$answer"
   else
     print -P "\033[1A\033[2K%F{red}Failed to get response%f"
     return 1
@@ -857,9 +929,7 @@ Directory: $_aish_err_dir"
 
   if [[ -n "$answer" ]]; then
     print -n "\033[1A\033[2K"
-    print -P -n "%F{cyan}"
-    print -r -- "$answer"
-    print -P -n "%f"
+    _aish_render_output "$answer"
   else
     print -P "\033[1A\033[2K%F{red}Failed to get response%f"
     return 1
