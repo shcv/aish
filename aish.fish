@@ -4,7 +4,6 @@
 # Configuration (can be overridden before sourcing)
 set -q AISH_BACKEND; or set -g AISH_BACKEND auto          # auto, claude-code, api
 set -q AISH_MODEL; or set -g AISH_MODEL sonnet            # sonnet, opus, haiku
-set -q AISH_ERROR_CORRECTION; or set -g AISH_ERROR_CORRECTION true  # Enable error correction
 set -q AISH_DEBUG; or set -g AISH_DEBUG false             # Show debug output
 set -q AISH_DATA_DIR; or set -g AISH_DATA_DIR (set -q XDG_DATA_HOME; and echo $XDG_DATA_HOME; or echo $HOME/.local/share)/aish
 
@@ -125,6 +124,74 @@ function _aish_strip_markdown
     string trim -- "$text"
 end
 
+# Get errors directory, creating if needed
+function _aish_errors_dir
+    set -l dir "$AISH_DATA_DIR/errors"
+    test -d "$dir"; or mkdir -p "$dir" 2>/dev/null
+    echo "$dir"
+end
+
+# Save an error record, returns the ID
+function _aish_save_error
+    set -l cmd "$argv[1]"
+    set -l exit_code "$argv[2]"
+    set -l errors_dir (_aish_errors_dir)
+    set -l counter_file "$errors_dir/counter"
+
+    # Read and increment counter
+    set -l id 1
+    if test -f "$counter_file"
+        set id (math (cat "$counter_file") + 1)
+    end
+    echo "$id" > "$counter_file"
+
+    # Write error record (4 lines: command, exit_code, PWD, epoch)
+    printf '%s\n%s\n%s\n%s\n' "$cmd" "$exit_code" "$PWD" (date +%s) > "$errors_dir/$id"
+
+    echo "$id"
+end
+
+# Load an error record by ID into global _aish_err_* variables
+function _aish_load_error
+    set -l id "$argv[1]"
+    set -l file (_aish_errors_dir)"/$id"
+
+    test -f "$file"; or return 1
+
+    set -l lines
+    while read -l line
+        set -a lines "$line"
+    end < "$file"
+
+    set -g _aish_err_cmd "$lines[1]"
+    set -g _aish_err_code "$lines[2]"
+    set -g _aish_err_dir "$lines[3]"
+    set -g _aish_err_time "$lines[4]"
+end
+
+# Get the latest error ID from counter
+function _aish_latest_error_id
+    set -l counter_file (_aish_errors_dir)/counter
+    test -f "$counter_file"; and cat "$counter_file"
+end
+
+# Format epoch as relative time
+function _aish_relative_time
+    set -l epoch $argv[1]
+    set -l now (date +%s)
+    set -l diff (math $now - $epoch)
+
+    if test $diff -lt 60
+        echo {$diff}"s ago"
+    else if test $diff -lt 3600
+        echo (math "floor($diff / 60)")"m ago"
+    else if test $diff -lt 86400
+        echo (math "floor($diff / 3600)")"h ago"
+    else
+        echo (math "floor($diff / 86400)")"d ago"
+    end
+end
+
 # Detect which backend to use
 function _aish_detect_backend
     if test "$AISH_BACKEND" != auto
@@ -239,6 +306,12 @@ function aish -d "AI Shell Integration"
             _aish_cmd_config $argv
         case debug
             _aish_cmd_debug
+        case errors
+            _aish_cmd_errors $argv
+        case fix
+            _aish_cmd_fix $argv
+        case explain
+            _aish_cmd_explain $argv
         case '*'
             _aish_error "Unknown command: $cmd"
             _aish_cmd_help
@@ -253,10 +326,10 @@ function _aish_cmd_help
     echo " - AI Shell Integration"
     echo
     set_color yellow
-    echo "Keybindings (recommended):"
+    echo "Keybindings:"
     set_color normal
-    echo "  Alt+J            Generate command (from line, or interactive if empty)"
-    echo "  Alt+K            Ask question (from line, or interactive if empty)"
+    echo "  Alt+J            Generate command (or fix last error if blank)"
+    echo "  Alt+K            Ask question (or explain last error if blank)"
     echo
     set_color yellow
     echo "Commands:"
@@ -275,12 +348,22 @@ function _aish_cmd_help
     echo "  aish debug       Toggle debug mode"
     echo
     set_color yellow
+    echo "Errors:"
+    set_color normal
+    echo "  aish errors           List recorded errors"
+    echo "  aish errors <id>      View error details"
+    echo "  aish errors rm <id>   Remove an error record"
+    echo "  aish errors clear     Remove all error records"
+    echo "  aish fix [id]         Generate fix for error (default: latest)"
+    echo "  aish explain [id]     Explain error (default: latest)"
+    echo
+    set_color yellow
     echo "Configuration:"
     set_color normal
-    echo "  AISH_BACKEND           auto, claude-code, api (current: $AISH_BACKEND)"
-    echo "  AISH_MODEL             sonnet, opus, haiku (current: $AISH_MODEL)"
-    echo "  AISH_DEBUG             true/false (current: $AISH_DEBUG)"
-    echo "  AISH_ERROR_CORRECTION  true/false (current: $AISH_ERROR_CORRECTION)"
+    echo "  AISH_BACKEND     auto, claude-code, api (current: $AISH_BACKEND)"
+    echo "  AISH_MODEL       sonnet, opus, haiku (current: $AISH_MODEL)"
+    echo "  AISH_DEBUG       true/false (current: $AISH_DEBUG)"
+    echo "  AISH_DATA_DIR    Data directory"
 end
 
 function _aish_cmd_status
@@ -325,12 +408,25 @@ function _aish_cmd_status
 
     echo
     set_color yellow
+    echo "Errors:"
+    set_color normal
+    set -l error_count 0
+    set -l errors_dir (_aish_errors_dir)
+    if test -f "$errors_dir/counter"
+        set -l max_id (cat "$errors_dir/counter")
+        for id in (seq 1 $max_id)
+            test -f "$errors_dir/$id"; and set error_count (math $error_count + 1)
+        end
+    end
+    echo "  Recorded:     $error_count"
+
+    echo
+    set_color yellow
     echo "Configuration:"
     set_color normal
     echo "  Data dir:     $AISH_DATA_DIR"
     echo "  Claude dir:   $claude_config_dir"
     echo "  Debug:        $AISH_DEBUG"
-    echo "  Error correction: $AISH_ERROR_CORRECTION"
 end
 
 function _aish_cmd_reset
@@ -516,7 +612,6 @@ function _aish_cmd_config
         echo "  AISH_BACKEND=$AISH_BACKEND"
         echo "  AISH_MODEL=$AISH_MODEL"
         echo "  AISH_DEBUG=$AISH_DEBUG"
-        echo "  AISH_ERROR_CORRECTION=$AISH_ERROR_CORRECTION"
         echo "  AISH_DATA_DIR=$AISH_DATA_DIR"
         return
     end
@@ -541,11 +636,6 @@ function _aish_cmd_config
             set_color green
             echo "AISH_DEBUG=$value"
             set_color normal
-        case error_correction AISH_ERROR_CORRECTION
-            set -g AISH_ERROR_CORRECTION "$value"
-            set_color green
-            echo "AISH_ERROR_CORRECTION=$value"
-            set_color normal
         case '*'
             _aish_error "Unknown config key: $key"
             return 1
@@ -564,6 +654,105 @@ function _aish_cmd_debug
         echo "Debug mode: on"
         set_color normal
     end
+end
+
+function _aish_cmd_errors
+    set -l subcmd $argv[1]
+    set -l arg $argv[2]
+    set -l errors_dir (_aish_errors_dir)
+
+    switch "$subcmd"
+        case rm
+            if test -z "$arg"
+                _aish_error "Usage: aish errors rm <id>"
+                return 1
+            end
+            if test -f "$errors_dir/$arg"
+                rm -f "$errors_dir/$arg"
+                set_color green
+                echo "Removed error #$arg"
+                set_color normal
+            else
+                _aish_error "Error #$arg not found"
+                return 1
+            end
+        case clear
+            rm -f $errors_dir/[0-9]* "$errors_dir/counter" 2>/dev/null
+            set_color green
+            echo "All errors cleared"
+            set_color normal
+        case ''
+            # List all errors
+            set -l counter_file "$errors_dir/counter"
+            if not test -f "$counter_file"
+                set_color yellow
+                echo "No errors recorded"
+                set_color normal
+                return
+            end
+            set -l max_id (cat "$counter_file")
+            set -l found false
+            for id in (seq 1 $max_id)
+                test -f "$errors_dir/$id"; or continue
+                set found true
+                _aish_load_error "$id"
+                set -l rel_time (_aish_relative_time "$_aish_err_time")
+                set -l short_cmd "$_aish_err_cmd"
+                if test (string length "$short_cmd") -gt 30
+                    set short_cmd (string sub -l 27 "$short_cmd")"..."
+                end
+                printf '  #%-3s  exit %-4s  %-30s  %-20s  %s\n' \
+                    "$id" "$_aish_err_code" "$short_cmd" "$_aish_err_dir" "$rel_time"
+            end
+            if test $found = false
+                set_color yellow
+                echo "No errors recorded"
+                set_color normal
+            end
+        case '*'
+            # View specific error by ID
+            if string match -qr '^[0-9]+$' -- "$subcmd"
+                if not _aish_load_error "$subcmd"
+                    _aish_error "Error #$subcmd not found"
+                    return 1
+                end
+                set -l timestamp (date -d "@$_aish_err_time" '+%Y-%m-%d %H:%M:%S' 2>/dev/null; or echo "$_aish_err_time")
+                set_color cyan
+                echo "Error #$subcmd"
+                set_color normal
+                echo "  Command:   $_aish_err_cmd"
+                echo "  Exit code: $_aish_err_code"
+                echo "  Directory: $_aish_err_dir"
+                echo "  Time:      $timestamp"
+            else
+                _aish_error "Unknown errors subcommand: $subcmd"
+                return 1
+            end
+    end
+end
+
+function _aish_cmd_fix
+    set -l id $argv[1]
+    if test -z "$id"
+        set id (_aish_latest_error_id)
+    end
+    if test -z "$id"
+        _aish_error "No errors recorded"
+        return 1
+    end
+    _aish_fix_error "$id"
+end
+
+function _aish_cmd_explain
+    set -l id $argv[1]
+    if test -z "$id"
+        set id (_aish_latest_error_id)
+    end
+    if test -z "$id"
+        _aish_error "No errors recorded"
+        return 1
+    end
+    _aish_explain_error "$id"
 end
 
 # ============================================================================
@@ -674,115 +863,148 @@ Request: $request"
     end
 end
 
-# Check failed command with Haiku for triage + correction in a single call
-function _aish_check_error -d "Triage and correct failed command"
-    set -l failed_cmd $argv[1]
-    set -l exit_code $argv[2]
+# ============================================================================
+# Error fix and explain
+# ============================================================================
 
-    set -l triage_prompt "A shell command failed. If this is a user error that can be corrected, provide ONLY the corrected command inside <correction></correction> tags on a single line. If not correctable, respond with just \"no\".
-
-Correctable: typos, wrong flags, command not found, permission issues, wrong paths, missing deps, syntax errors.
-Not correctable: expected non-zero (grep no match, diff differences, test checks), build/test failures from code bugs, signals.
-
-Command: $failed_cmd
-Exit code: $exit_code
-Shell: fish
-Directory: $PWD"
-
-    set -l backend (_aish_detect_backend)
-    set -l response ""
-
-    # Show indicator
-    printf '%s' (set_color brblack)"Checking..."(set_color normal)
-
-    switch $backend
-        case api
-            # Direct API call to Haiku with 5s timeout
-            set -l json_prompt (printf '%s' "$triage_prompt" | jq -Rs .)
-            set response (curl -s --max-time 5 https://api.anthropic.com/v1/messages \
-                -H "Content-Type: application/json" \
-                -H "x-api-key: $ANTHROPIC_API_KEY" \
-                -H "anthropic-version: 2023-06-01" \
-                -d "{
-                  \"model\": \"claude-haiku-4-5-20251001\",
-                  \"max_tokens\": 256,
-                  \"messages\": [{\"role\": \"user\", \"content\": $json_prompt}]
-                }" 2>/dev/null)
-            set response (echo "$response" | jq -r '.content[0].text // empty' 2>/dev/null)
-        case claude-code
-            # Use claude -p without session, isolated config dir
-            set -l claude_config_dir (_aish_claude_config_dir)
-            _aish_ensure_claude_config
-            set response (CLAUDE_CONFIG_DIR="$claude_config_dir" timeout 5 claude -p "$triage_prompt" --model claude-haiku-4-5-20251001 --output-format text --allowedTools '' 2>/dev/null)
-        case '*'
-            printf '\r\033[2K'
-            return 1
+function _aish_fix_error -d "Generate fix for a recorded error"
+    set -l id $argv[1]
+    if not _aish_load_error "$id"
+        _aish_error "Error #$id not found"
+        return 1
     end
 
-    # Clear indicator
-    printf '\r\033[2K'
+    set_color brblack
+    printf 'Fixing: '
+    set_color normal
+    echo "$_aish_err_cmd (exit $_aish_err_code)"
 
-    _aish_debug "Error triage response: $response"
+    set -l prompt "A shell command failed. Suggest the corrected command.
+IMPORTANT: Output ONLY the corrected command, nothing else. No explanation, no markdown, no code blocks.
 
-    # Check for <correction> tags
-    if string match -q '*<correction>*</correction>*' -- "$response"
-        # Extract command between tags
-        set -l suggestion (string replace -r '.*<correction>(.*)</correction>.*' '$1' -- "$response")
-        set suggestion (string trim -- "$suggestion")
+Command: $_aish_err_cmd
+Exit code: $_aish_err_code
+Shell: fish
+Directory: $_aish_err_dir"
 
-        if test -n "$suggestion"; and test "$suggestion" != "$failed_cmd"
-            set_color yellow
-            printf "Suggested fix: "
+    set_color cyan
+    echo "Generating fix..."
+    set_color normal
+
+    set -l cmd (_aish_query_ai "$prompt")
+
+    if test -z "$cmd"
+        printf '\033[1A\033[2K'
+        set_color red
+        echo "Failed to generate fix"
+        set_color normal
+        return 1
+    end
+
+    set cmd (_aish_strip_markdown "$cmd")
+
+    # Clear "Generating fix..." and show command
+    printf '\033[1A\033[2K'
+    set_color yellow
+    echo "$cmd"
+    set_color normal
+
+    # Prompt for action
+    set_color brblack
+    read -n 1 -P "[e]xecute, [c]opy to prompt, [n]o? " action
+    set_color normal
+
+    switch $action
+        case e E y Y
+            echo
+            set_color green
+            echo "Executing..."
             set_color normal
-            echo "$suggestion"
+            eval $cmd
+        case c C
+            echo
+            commandline -r "$cmd"
+            commandline -f repaint
+        case '*'
+            echo
             set_color brblack
-            read -n 1 -P "[e]xecute, [c]opy to prompt, [n]o? " action
+            echo "Cancelled"
             set_color normal
+    end
+end
 
-            switch $action
-                case e E y Y
-                    echo
-                    eval $suggestion
-                case c C
-                    echo
-                    commandline -r "$suggestion"
-                    commandline -f repaint
-                case '*'
-                    echo
-            end
-        end
+function _aish_explain_error -d "Explain a recorded error"
+    set -l id $argv[1]
+    if not _aish_load_error "$id"
+        _aish_error "Error #$id not found"
+        return 1
+    end
+
+    set_color brblack
+    printf 'Explaining: '
+    set_color normal
+    echo "$_aish_err_cmd (exit $_aish_err_code)"
+
+    set -l prompt "Explain why this shell command failed. Be concise and helpful.
+
+Command: $_aish_err_cmd
+Exit code: $_aish_err_code
+Shell: fish
+Directory: $_aish_err_dir"
+
+    set_color cyan
+    echo "Thinking..."
+    set_color normal
+
+    set -l answer (_aish_query_ai "$prompt")
+
+    if test -n "$answer"
+        printf '\033[1A\033[2K'
+        set_color cyan
+        printf '%s\n' "$answer"
+        set_color normal
+    else
+        printf '\033[1A\033[2K'
+        set_color red
+        echo "Failed to get response"
+        set_color normal
+        return 1
     end
 end
 
 # ============================================================================
-# Error correction hook
+# Error recording hook
 # ============================================================================
 
-# Store last command info
+# Store last command for error recording
 set -g _aish_last_command ""
-set -g _aish_last_status 0
+set -g _aish_last_error_id ""
 
 function _aish_fish_preexec --on-event fish_preexec
     set -g _aish_last_command "$argv"
 end
 
 function _aish_fish_postexec --on-event fish_postexec
-    set -g _aish_last_status $status
+    set -l last_status $status
 
-    # Skip if disabled or command succeeded
-    test "$AISH_ERROR_CORRECTION" != true; and return
-    test $_aish_last_status -eq 0; and return
+    # Success → clear last error
+    if test $last_status -eq 0
+        set -g _aish_last_error_id ""
+        set -g _aish_last_command ""
+        return
+    end
+
     test -z "$_aish_last_command"; and return
 
     # Fast-path: ignore signal exit codes (Ctrl+C, SIGPIPE, SIGTERM)
-    switch $_aish_last_status
+    switch $last_status
         case 130 141 143
             set -g _aish_last_command ""
             return
     end
 
-    _aish_check_error "$_aish_last_command" "$_aish_last_status"
-
+    # Save error and record ID
+    set -g _aish_last_error_id (_aish_save_error "$_aish_last_command" "$last_status")
     set -g _aish_last_command ""
 end
 
@@ -804,6 +1026,11 @@ function _aish_generate_binding
     echo  # Move to next line before output
     if test -n "$request"
         aish-generate "$request"
+    else if test -n "$_aish_last_error_id"
+        # Fix last error
+        set -l error_id "$_aish_last_error_id"
+        set -g _aish_last_error_id ""
+        _aish_fix_error "$error_id"
     else
         # Interactive mode when buffer is empty
         set -g _aish_interactive_mode "generate"
@@ -824,6 +1051,11 @@ function _aish_query_binding
     echo  # Move to next line before output
     if test -n "$query"
         aish-query "$query"
+    else if test -n "$_aish_last_error_id"
+        # Explain last error
+        set -l error_id "$_aish_last_error_id"
+        set -g _aish_last_error_id ""
+        _aish_explain_error "$error_id"
     else
         # Interactive mode when buffer is empty
         set -g _aish_interactive_mode "query"
@@ -856,8 +1088,13 @@ complete -c aish -n "__fish_use_subcommand" -a "sessions" -d "List sessions"
 complete -c aish -n "__fish_use_subcommand" -a "switch" -d "Switch session"
 complete -c aish -n "__fish_use_subcommand" -a "config" -d "Show/set config"
 complete -c aish -n "__fish_use_subcommand" -a "debug" -d "Toggle debug"
+complete -c aish -n "__fish_use_subcommand" -a "errors" -d "List/manage errors"
+complete -c aish -n "__fish_use_subcommand" -a "fix" -d "Fix an error"
+complete -c aish -n "__fish_use_subcommand" -a "explain" -d "Explain an error"
 
 complete -c aish -n "__fish_seen_subcommand_from reset" -l all -s a -d "Reset all sessions"
+complete -c aish -n "__fish_seen_subcommand_from errors" -a "rm" -d "Remove error"
+complete -c aish -n "__fish_seen_subcommand_from errors" -a "clear" -d "Clear all errors"
 
 # ============================================================================
 # Startup

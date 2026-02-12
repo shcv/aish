@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-aish (AI Shell) integrates Claude AI into your terminal. It provides natural language command generation, question answering, and error correction while preserving full shell state. Supports both Zsh and Fish shells.
+aish (AI Shell) integrates Claude AI into your terminal. It provides natural language command generation, question answering, and on-demand error fixing/explaining while preserving full shell state. Supports both Zsh and Fish shells.
 
 ## Installation
 
@@ -31,8 +31,8 @@ source /path/to/aish/aish.fish
 
 ### Keybindings
 
-- `Alt+J` - Generate command from current line, or interactive mode if empty
-- `Alt+K` - Ask question about current line, or interactive mode if empty
+- `Alt+J` - Generate command from current line, fix last error if blank, or interactive mode
+- `Alt+K` - Ask question about current line, explain last error if blank, or interactive mode
 
 ### Commands
 
@@ -47,18 +47,23 @@ source /path/to/aish/aish.fish
 - `aish switch <id>` - Switch to a different session
 - `aish config [key=val]` - Show or set configuration
 - `aish debug` - Toggle debug mode
+- `aish errors` - List recorded errors
+- `aish errors <id>` - View error details
+- `aish errors rm <id>` - Remove an error record
+- `aish errors clear` - Remove all error records
+- `aish fix [id]` - Generate fix for error (default: latest)
+- `aish explain [id]` - Explain error (default: latest)
 
 ### Configuration
 
 - `AISH_BACKEND` - auto, claude-code, api (default: auto)
 - `AISH_MODEL` - sonnet, opus, haiku (default: sonnet)
 - `AISH_DEBUG` - true/false (default: false)
-- `AISH_ERROR_CORRECTION` - true/false (default: true)
 - `AISH_DATA_DIR` - Data directory (default: $XDG_DATA_HOME/aish)
 
-### Error Correction
+### Error Handling
 
-When a command fails, aish sends the command and exit code to Haiku in a single triage+correction call. Signal exits (130/Ctrl+C, 141/SIGPIPE, 143/SIGTERM) are fast-path ignored. If Haiku determines the error is correctable (typos, wrong flags, command not found, etc.), it returns a suggestion; otherwise it stays silent with no user-visible prompt.
+Failed commands are passively recorded to `$AISH_DATA_DIR/errors/`. Signal exits (130/Ctrl+C, 141/SIGPIPE, 143/SIGTERM) are ignored. Successful commands clear the last error state. Users can fix or explain errors on demand via keybindings (Alt+J/Alt+K on blank line) or subcommands (`aish fix`, `aish explain`).
 
 ## Architecture
 
@@ -77,4 +82,5 @@ Both plugins extend their respective shells rather than wrapping them, so shell 
 - `_aish_query_ai` - Core AI query, handles session/resume logic
 - `aish` - Main command dispatcher for management subcommands
 - `aish-query`, `aish-generate` - AI query/generate (called by keybindings)
-- `_aish_check_error` - Haiku-based error triage and correction
+- `_aish_save_error`, `_aish_load_error` - Error record storage
+- `_aish_fix_error`, `_aish_explain_error` - On-demand error fix/explain

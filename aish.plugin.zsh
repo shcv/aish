@@ -4,7 +4,6 @@
 # Configuration (can be overridden before sourcing)
 : ${AISH_BACKEND:=auto}          # auto, claude-code, api
 : ${AISH_MODEL:=sonnet}          # sonnet, opus, haiku
-: ${AISH_ERROR_CORRECTION:=true} # Enable error correction prompts
 : ${AISH_DEBUG:=false}           # Show debug output
 : ${AISH_DATA_DIR:=${XDG_DATA_HOME:-$HOME/.local/share}/aish}  # Data directory
 
@@ -124,6 +123,71 @@ _aish_strip_markdown() {
   text="${text%"${text##*[![:space:]]}"}"
 
   echo "$text"
+}
+
+# Get errors directory, creating if needed
+_aish_errors_dir() {
+  local dir="$AISH_DATA_DIR/errors"
+  [[ -d "$dir" ]] || mkdir -p "$dir" 2>/dev/null
+  echo "$dir"
+}
+
+# Save an error record, returns the ID
+_aish_save_error() {
+  local cmd="$1"
+  local exit_code="$2"
+  local errors_dir=$(_aish_errors_dir)
+  local counter_file="$errors_dir/counter"
+
+  # Read and increment counter
+  local id=1
+  if [[ -f "$counter_file" ]]; then
+    id=$(( $(cat "$counter_file") + 1 ))
+  fi
+  echo "$id" > "$counter_file"
+
+  # Write error record (4 lines: command, exit_code, PWD, epoch)
+  printf '%s\n%s\n%s\n%s\n' "$cmd" "$exit_code" "$PWD" "$(date +%s)" > "$errors_dir/$id"
+
+  echo "$id"
+}
+
+# Load an error record by ID into _aish_err_* variables
+_aish_load_error() {
+  local id="$1"
+  local file="$(_aish_errors_dir)/$id"
+
+  [[ -f "$file" ]] || return 1
+
+  {
+    IFS= read -r _aish_err_cmd
+    IFS= read -r _aish_err_code
+    IFS= read -r _aish_err_dir
+    IFS= read -r _aish_err_time
+  } < "$file"
+}
+
+# Get the latest error ID from counter
+_aish_latest_error_id() {
+  local counter_file="$(_aish_errors_dir)/counter"
+  [[ -f "$counter_file" ]] && cat "$counter_file"
+}
+
+# Format epoch as relative time
+_aish_relative_time() {
+  local epoch="$1"
+  local now=$(date +%s)
+  local diff=$(( now - epoch ))
+
+  if (( diff < 60 )); then
+    echo "${diff}s ago"
+  elif (( diff < 3600 )); then
+    echo "$(( diff / 60 ))m ago"
+  elif (( diff < 86400 )); then
+    echo "$(( diff / 3600 ))h ago"
+  else
+    echo "$(( diff / 86400 ))d ago"
+  fi
 }
 
 # Detect which backend to use
@@ -249,6 +313,15 @@ aish() {
     debug)
       _aish_cmd_debug
       ;;
+    errors)
+      _aish_cmd_errors "$@"
+      ;;
+    fix)
+      _aish_cmd_fix "$@"
+      ;;
+    explain)
+      _aish_cmd_explain "$@"
+      ;;
     *)
       _aish_error "Unknown command: $cmd"
       _aish_cmd_help
@@ -261,8 +334,8 @@ _aish_cmd_help() {
   print -P "%F{cyan}aish%f - AI Shell Integration"
   print ""
   print -P "%F{yellow}Keybindings:%f"
-  print "  Alt+J            Generate command from current line"
-  print "  Alt+K            Ask about current line"
+  print "  Alt+J            Generate command (or fix last error if blank)"
+  print "  Alt+K            Ask question (or explain last error if blank)"
   print ""
   print -P "%F{yellow}Commands:%f"
   print "  aish <command>   Manage aish"
@@ -277,12 +350,19 @@ _aish_cmd_help() {
   print "  debug            Toggle debug mode"
   print "  help             Show this help"
   print ""
+  print -P "%F{yellow}Errors:%f"
+  print "  errors           List recorded errors"
+  print "  errors <id>      View error details"
+  print "  errors rm <id>   Remove an error record"
+  print "  errors clear     Remove all error records"
+  print "  fix [id]         Generate fix for error (default: latest)"
+  print "  explain [id]     Explain error (default: latest)"
+  print ""
   print -P "%F{yellow}Configuration:%f"
-  print "  AISH_BACKEND           auto, claude-code, api (current: $AISH_BACKEND)"
-  print "  AISH_MODEL             sonnet, opus, haiku (current: $AISH_MODEL)"
-  print "  AISH_DEBUG             true/false (current: $AISH_DEBUG)"
-  print "  AISH_ERROR_CORRECTION  true/false (current: $AISH_ERROR_CORRECTION)"
-  print "  AISH_DATA_DIR          Data directory"
+  print "  AISH_BACKEND     auto, claude-code, api (current: $AISH_BACKEND)"
+  print "  AISH_MODEL       sonnet, opus, haiku (current: $AISH_MODEL)"
+  print "  AISH_DEBUG       true/false (current: $AISH_DEBUG)"
+  print "  AISH_DATA_DIR    Data directory"
 }
 
 _aish_cmd_status() {
@@ -316,11 +396,22 @@ _aish_cmd_status() {
   fi
 
   print ""
+  print -P "%F{yellow}Errors:%f"
+  local error_count=0
+  local errors_dir=$(_aish_errors_dir)
+  if [[ -f "$errors_dir/counter" ]]; then
+    local max_id=$(cat "$errors_dir/counter")
+    for id in $(seq 1 "$max_id"); do
+      [[ -f "$errors_dir/$id" ]] && (( error_count++ ))
+    done
+  fi
+  print "  Recorded:     $error_count"
+
+  print ""
   print -P "%F{yellow}Configuration:%f"
   print "  Data dir:     $AISH_DATA_DIR"
   print "  Claude dir:   $claude_config_dir"
   print "  Debug:        $AISH_DEBUG"
-  print "  Error correction: $AISH_ERROR_CORRECTION"
 }
 
 _aish_cmd_reset() {
@@ -464,7 +555,6 @@ _aish_cmd_config() {
     print "  AISH_BACKEND=$AISH_BACKEND"
     print "  AISH_MODEL=$AISH_MODEL"
     print "  AISH_DEBUG=$AISH_DEBUG"
-    print "  AISH_ERROR_CORRECTION=$AISH_ERROR_CORRECTION"
     print "  AISH_DATA_DIR=$AISH_DATA_DIR"
     return
   fi
@@ -486,10 +576,6 @@ _aish_cmd_config() {
       AISH_DEBUG="$value"
       print -P "%F{green}AISH_DEBUG=$value%f"
       ;;
-    error_correction|AISH_ERROR_CORRECTION)
-      AISH_ERROR_CORRECTION="$value"
-      print -P "%F{green}AISH_ERROR_CORRECTION=$value%f"
-      ;;
     *)
       _aish_error "Unknown config key: $key"
       return 1
@@ -505,6 +591,94 @@ _aish_cmd_debug() {
     AISH_DEBUG=true
     print -P "%F{green}Debug mode: on%f"
   fi
+}
+
+_aish_cmd_errors() {
+  local subcmd="$1"
+  local arg="$2"
+  local errors_dir=$(_aish_errors_dir)
+
+  case "$subcmd" in
+    rm)
+      if [[ -z "$arg" ]]; then
+        _aish_error "Usage: aish errors rm <id>"
+        return 1
+      fi
+      if [[ -f "$errors_dir/$arg" ]]; then
+        rm -f "$errors_dir/$arg"
+        print -P "%F{green}Removed error #$arg%f"
+      else
+        _aish_error "Error #$arg not found"
+        return 1
+      fi
+      ;;
+    clear)
+      rm -f "$errors_dir"/[0-9]* "$errors_dir/counter" 2>/dev/null
+      print -P "%F{green}All errors cleared%f"
+      ;;
+    "")
+      # List all errors
+      local counter_file="$errors_dir/counter"
+      if [[ ! -f "$counter_file" ]]; then
+        print -P "%F{yellow}No errors recorded%f"
+        return
+      fi
+      local max_id=$(cat "$counter_file")
+      local found=false
+      for id in $(seq 1 "$max_id"); do
+        [[ -f "$errors_dir/$id" ]] || continue
+        found=true
+        _aish_load_error "$id"
+        local rel_time=$(_aish_relative_time "$_aish_err_time")
+        local short_cmd="$_aish_err_cmd"
+        (( ${#short_cmd} > 30 )) && short_cmd="${short_cmd:0:27}..."
+        printf "  #%-3s  exit %-4s  %-30s  %-20s  %s\n" \
+          "$id" "$_aish_err_code" "$short_cmd" "$_aish_err_dir" "$rel_time"
+      done
+      if ! $found; then
+        print -P "%F{yellow}No errors recorded%f"
+      fi
+      ;;
+    *)
+      # View specific error by ID
+      if [[ "$subcmd" =~ ^[0-9]+$ ]]; then
+        if ! _aish_load_error "$subcmd"; then
+          _aish_error "Error #$subcmd not found"
+          return 1
+        fi
+        local timestamp
+        timestamp=$(date -d "@$_aish_err_time" '+%Y-%m-%d %H:%M:%S' 2>/dev/null \
+          || date -r "$_aish_err_time" '+%Y-%m-%d %H:%M:%S' 2>/dev/null \
+          || echo "$_aish_err_time")
+        print -P "%F{cyan}Error #$subcmd%f"
+        print "  Command:   $_aish_err_cmd"
+        print "  Exit code: $_aish_err_code"
+        print "  Directory: $_aish_err_dir"
+        print "  Time:      $timestamp"
+      else
+        _aish_error "Unknown errors subcommand: $subcmd"
+        return 1
+      fi
+      ;;
+  esac
+}
+
+_aish_cmd_fix() {
+  local id="${1:-$(_aish_latest_error_id)}"
+  if [[ -z "$id" ]]; then
+    _aish_error "No errors recorded"
+    return 1
+  fi
+  _aish_fix_error "$id"
+}
+
+_aish_cmd_explain() {
+  local id="${1:-$(_aish_latest_error_id)}"
+  if [[ -z "$id" ]]; then
+    _aish_error "No errors recorded"
+    return 1
+  fi
+  _aish_explain_error "$id"
 }
 
 aish-query() {
@@ -606,115 +780,123 @@ Request: $request"
   esac
 }
 
-# Check failed command with Haiku for triage + correction in a single call
-_aish_check_error() {
-  local failed_cmd="$1"
-  local exit_code="$2"
+# ============================================================================
+# Error fix and explain
+# ============================================================================
 
-  local triage_prompt="A shell command failed. If this is a user error that can be corrected, provide ONLY the corrected command inside <correction></correction> tags on a single line. If not correctable, respond with just \"no\".
+_aish_fix_error() {
+  local id="$1"
+  _aish_load_error "$id" || { _aish_error "Error #$id not found"; return 1; }
 
-Correctable: typos, wrong flags, command not found, permission issues, wrong paths, missing deps, syntax errors.
-Not correctable: expected non-zero (grep no match, diff differences, test checks), build/test failures from code bugs, signals.
+  print -P "%F{240}Fixing: %F{white}$_aish_err_cmd%F{240} (exit $_aish_err_code)%f"
 
-Command: $failed_cmd
-Exit code: $exit_code
+  local prompt="A shell command failed. Suggest the corrected command.
+IMPORTANT: Output ONLY the corrected command, nothing else. No explanation, no markdown, no code blocks.
+
+Command: $_aish_err_cmd
+Exit code: $_aish_err_code
 Shell: zsh
-Directory: $PWD"
+Directory: $_aish_err_dir"
 
-  local backend=$(_aish_detect_backend)
-  local response=""
+  print -P "%F{cyan}Generating fix...%f"
 
-  # Show indicator and set up Ctrl+C cleanup
-  print -Pn "%F{240}Checking...%f"
-  trap 'print -n "\r\033[2K"; trap - INT; return 0' INT
+  local cmd
+  cmd=$(_aish_query_ai "$prompt")
 
-  case "$backend" in
-    api)
-      # Direct API call to Haiku with 5s timeout
-      response=$(curl -s --max-time 5 https://api.anthropic.com/v1/messages \
-        -H "Content-Type: application/json" \
-        -H "x-api-key: $ANTHROPIC_API_KEY" \
-        -H "anthropic-version: 2023-06-01" \
-        -d "{
-          \"model\": \"claude-haiku-4-5-20251001\",
-          \"max_tokens\": 256,
-          \"messages\": [{\"role\": \"user\", \"content\": $(printf '%s' "$triage_prompt" | jq -Rs .)}]
-        }" 2>/dev/null)
-      response=$(echo "$response" | jq -r '.content[0].text // empty' 2>/dev/null)
+  if [[ -z "$cmd" ]]; then
+    print -P "\033[1A\033[2K%F{red}Failed to generate fix%f"
+    return 1
+  fi
+
+  cmd=$(_aish_strip_markdown "$cmd")
+
+  # Clear "Generating fix..." and show command
+  print -P "\033[1A\033[2K%F{yellow}$cmd%f"
+
+  # Prompt for action
+  print -Pn "%F{240}[e]xecute, [c]opy to prompt, [n]o? %f"
+  read -k1 action
+  echo
+
+  case "$action" in
+    e|E|y|Y)
+      print -P "%F{green}Executing...%f"
+      eval "$cmd"
       ;;
-    claude-code)
-      # Use claude -p without session, isolated config dir
-      local claude_config_dir=$(_aish_claude_config_dir)
-      _aish_ensure_claude_config
-      response=$(CLAUDE_CONFIG_DIR="$claude_config_dir" timeout 5 claude -p "$triage_prompt" --model claude-haiku-4-5-20251001 --output-format text --allowedTools '' 2>/dev/null)
+    c|C)
+      if [[ -n "$AISH_COPY_TO_BUFFER" ]]; then
+        print -r -- "$cmd" >&3
+      else
+        print -z -- "$cmd"
+      fi
+      return 0
       ;;
     *)
-      print -n "\r\033[2K"
-      trap - INT
-      return 1
+      print -P "%F{240}Cancelled%f"
       ;;
   esac
+}
 
-  # Clear indicator
-  print -n "\r\033[2K"
-  trap - INT
+_aish_explain_error() {
+  local id="$1"
+  _aish_load_error "$id" || { _aish_error "Error #$id not found"; return 1; }
 
-  _aish_debug "Error triage response: $response"
+  print -P "%F{240}Explaining: %F{white}$_aish_err_cmd%F{240} (exit $_aish_err_code)%f"
 
-  # Check for <correction> tags
-  if [[ "$response" == *"<correction>"*"</correction>"* ]]; then
-    # Extract command between tags
-    local suggestion="${response#*<correction>}"
-    suggestion="${suggestion%%</correction>*}"
-    # Trim whitespace
-    suggestion="${suggestion#"${suggestion%%[![:space:]]*}"}"
-    suggestion="${suggestion%"${suggestion##*[![:space:]]}"}"
+  local prompt="Explain why this shell command failed. Be concise and helpful.
 
-    if [[ -n "$suggestion" && "$suggestion" != "$failed_cmd" ]]; then
-      print -P "%F{yellow}Suggested fix: %F{white}$suggestion%f"
-      print -Pn "%F{240}[e]xecute, [c]opy to prompt, [n]o? %f"
-      read -k1 action
-      echo
+Command: $_aish_err_cmd
+Exit code: $_aish_err_code
+Shell: zsh
+Directory: $_aish_err_dir"
 
-      case "$action" in
-        e|E|y|Y)
-          eval "$suggestion"
-          ;;
-        c|C)
-          print -z -- "$suggestion"
-          ;;
-      esac
-    fi
+  print -P "%F{cyan}Thinking...%f"
+
+  local answer
+  answer=$(_aish_query_ai "$prompt")
+
+  if [[ -n "$answer" ]]; then
+    print -n "\033[1A\033[2K"
+    print -P -n "%F{cyan}"
+    print -r -- "$answer"
+    print -P -n "%f"
+  else
+    print -P "\033[1A\033[2K%F{red}Failed to get response%f"
+    return 1
   fi
 }
 
 # ============================================================================
-# Error correction hook
+# Error recording hook
 # ============================================================================
 
-# Store last command and its output for error correction
+# Store last command for error recording
 _aish_last_command=""
-_aish_last_status=0
+_aish_last_error_id=""
 
 _aish_preexec() {
   _aish_last_command="$1"
 }
 
 _aish_precmd() {
-  _aish_last_status=$?
+  local last_status=$?
 
-  # Skip if disabled or command succeeded
-  [[ "$AISH_ERROR_CORRECTION" != "true" ]] && return
-  [[ $_aish_last_status -eq 0 ]] && return
+  # Success → clear last error
+  if [[ $last_status -eq 0 ]]; then
+    _aish_last_error_id=""
+    _aish_last_command=""
+    return
+  fi
+
   [[ -z "$_aish_last_command" ]] && return
 
   # Fast-path: ignore signal exit codes (Ctrl+C, SIGPIPE, SIGTERM)
-  case $_aish_last_status in
+  case $last_status in
     130|141|143) _aish_last_command=""; return ;;
   esac
 
-  _aish_check_error "$_aish_last_command" "$_aish_last_status"
-
+  # Save error and record ID
+  _aish_last_error_id=$(_aish_save_error "$_aish_last_command" "$last_status")
   _aish_last_command=""
 }
 
@@ -736,6 +918,16 @@ _aish_generate_widget() {
   if [[ -n "$request" ]]; then
     local captured
     captured=$(AISH_COPY_TO_BUFFER=1 aish-generate "$request" 3>&1 1>/dev/tty)
+    if [[ -n "$captured" ]]; then
+      BUFFER="$captured"
+      CURSOR=${#BUFFER}
+    fi
+  elif [[ -n "$_aish_last_error_id" ]]; then
+    # Fix last error
+    local error_id="$_aish_last_error_id"
+    _aish_last_error_id=""
+    local captured
+    captured=$(AISH_COPY_TO_BUFFER=1 _aish_fix_error "$error_id" 3>&1 1>/dev/tty)
     if [[ -n "$captured" ]]; then
       BUFFER="$captured"
       CURSOR=${#BUFFER}
@@ -762,6 +954,11 @@ _aish_query_widget() {
   echo  # Move to next line before output
   if [[ -n "$query" ]]; then
     aish-query "$query"
+  elif [[ -n "$_aish_last_error_id" ]]; then
+    # Explain last error
+    local error_id="$_aish_last_error_id"
+    _aish_last_error_id=""
+    _aish_explain_error "$error_id"
   else
     # Interactive mode when buffer is empty
     aish-query
