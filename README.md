@@ -7,7 +7,7 @@ A shell plugin that integrates Claude AI into your terminal. Ask questions, gene
 - **`Alt+K`** - Ask AI anything, or explain last error if blank
 - **`Alt+J`** - Generate shell commands, or fix last error if blank
 - **Error recording** - Failed commands saved for on-demand fix/explain
-- **Session continuity** - Conversations persist per-directory
+- **Session continuity** - Conversations persist per shell session
 - **Full shell state** - Variables, jobs, aliases all preserved (it's a plugin, not a wrapper)
 
 ## Installation
@@ -44,9 +44,8 @@ Alt+K    Ask about current line
 # Management
 aish status      # Show session info
 aish reset       # Clear current session
-aish sessions    # List all sessions
 aish compact     # Summarize to reduce context
-aish config      # Show/set configuration
+aish config      # Show current config
 aish debug       # Toggle debug mode
 aish help        # Show all commands
 
@@ -63,31 +62,38 @@ aish errors clear # Clear all errors
 
 ## Configuration
 
-Set these before sourcing the plugin:
+Config is loaded from `~/.config/aish/config` (key=value format). Environment variables take precedence over the config file.
 
 ```
-AISH_BACKEND=auto              # auto, claude-code, api
-AISH_MODEL=sonnet              # sonnet, opus, haiku
-AISH_DEBUG=false               # Show debug output
-AISH_DATA_DIR=~/.local/share/aish  # Data directory
+# Set persistently (writes to config file)
+aish config model=opus
+aish config backend=api
+
+# Set for current session only
+aish config --session model=opus
+
+# Show current config
+aish config
 ```
 
-Or change at runtime:
+Available keys:
 
-```
-aish config debug=true
-aish debug                  # Toggle debug mode
-```
+| Key | Values | Default |
+|-----|--------|---------|
+| `backend` | auto, claude-code, api | auto |
+| `model` | sonnet, opus, haiku | haiku |
+| `debug` | true, false | false |
+| `highlighter` | auto, bat, batcat, none | auto |
 
 ## Data Storage
 
-All data stored in `~/.local/share/aish/` (or `$XDG_DATA_HOME/aish`):
-
 ```
+~/.config/aish/
+└── config               # Persistent configuration (key=value)
+
 ~/.local/share/aish/
-├── claude/          # Isolated Claude config (credentials symlinked)
-├── errors/          # Recorded command failures
-└── sessions/        # Per-directory session mappings
+├── claude/              # Isolated Claude config (credentials symlinked)
+└── errors/              # Recorded command failures
 ```
 
 ## License
