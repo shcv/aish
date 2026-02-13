@@ -112,8 +112,9 @@ _aish_save_error() {
   fi
   echo "$id" > "$counter_file"
 
-  # Write error record (4 lines: command, exit_code, PWD, epoch)
-  printf '%s\n%s\n%s\n%s\n' "$cmd" "$exit_code" "$PWD" "$(date +%s)" > "$errors_dir/$id"
+  # Write error record: exit_code, PWD, epoch on separate lines, then command last
+  # Command is last because it may contain newlines
+  printf '%s\n%s\n%s\n%s\n' "$exit_code" "$PWD" "$(date +%s)" "$cmd" > "$errors_dir/$id"
 
   echo "$id"
 }
@@ -126,11 +127,14 @@ _aish_load_error() {
   [[ -f "$file" ]] || return 1
 
   {
-    IFS= read -r _aish_err_cmd
     IFS= read -r _aish_err_code
     IFS= read -r _aish_err_dir
     IFS= read -r _aish_err_time
+    # Command is the rest of the file (may contain newlines)
+    _aish_err_cmd=$(cat)
   } < "$file"
+  # Strip trailing newline from command
+  _aish_err_cmd="${_aish_err_cmd%$'\n'}"
 }
 
 # Get the latest error ID from counter
@@ -174,53 +178,16 @@ _aish_find_highlighter() {
   esac
 }
 
-# Render AI output with syntax highlighting for code blocks
+# Render AI output (markdown) with syntax highlighting
 _aish_render_output() {
   local text="$1"
   local highlighter
   highlighter=$(_aish_find_highlighter)
-  local in_code=false
-  local lang=""
-  local code_buf=""
 
-  while IFS= read -r line; do
-    if $in_code; then
-      if [[ "$line" =~ '^```[[:space:]]*$' ]]; then
-        if [[ -n "$highlighter" && -n "$lang" ]]; then
-          printf '%s\n' "$code_buf" | "$highlighter" --color=always --style=plain --paging=never --language="$lang"
-        else
-          print -P -n "%F{yellow}"
-          printf '%s\n' "$code_buf"
-          print -P -n "%f"
-        fi
-        in_code=false
-        lang=""
-        code_buf=""
-      else
-        if [[ -n "$code_buf" ]]; then
-          code_buf="$code_buf"$'\n'"$line"
-        else
-          code_buf="$line"
-        fi
-      fi
-    else
-      if [[ "$line" =~ '^```([a-zA-Z0-9_+-]*)' ]]; then
-        lang="${match[1]}"
-        in_code=true
-        code_buf=""
-      else
-        print -P -n "%F{cyan}"
-        print -r -- "$line"
-        print -P -n "%f"
-      fi
-    fi
-  done <<< "$text"
-
-  # Handle unclosed code block
-  if $in_code && [[ -n "$code_buf" ]]; then
-    print -P -n "%F{yellow}"
-    printf '%s\n' "$code_buf"
-    print -P -n "%f"
+  if [[ -n "$highlighter" ]]; then
+    printf '%s\n' "$text" | "$highlighter" --color=always --style=plain --paging=never --language=md
+  else
+    print -P "%F{cyan}${text}%f"
   fi
 }
 

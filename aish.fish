@@ -118,8 +118,9 @@ function _aish_save_error
     end
     echo "$id" > "$counter_file"
 
-    # Write error record (4 lines: command, exit_code, PWD, epoch)
-    printf '%s\n%s\n%s\n%s\n' "$cmd" "$exit_code" "$PWD" (date +%s) > "$errors_dir/$id"
+    # Write error record: exit_code, PWD, epoch on separate lines, then command last
+    # Command is last because it may contain newlines
+    printf '%s\n%s\n%s\n%s\n' "$exit_code" "$PWD" (date +%s) "$cmd" > "$errors_dir/$id"
 
     echo "$id"
 end
@@ -136,10 +137,11 @@ function _aish_load_error
         set -a lines "$line"
     end < "$file"
 
-    set -g _aish_err_cmd "$lines[1]"
-    set -g _aish_err_code "$lines[2]"
-    set -g _aish_err_dir "$lines[3]"
-    set -g _aish_err_time "$lines[4]"
+    set -g _aish_err_code "$lines[1]"
+    set -g _aish_err_dir "$lines[2]"
+    set -g _aish_err_time "$lines[3]"
+    # Command is the rest (may span multiple lines)
+    set -g _aish_err_cmd (string join \n $lines[4..-1])
 end
 
 # Get the latest error ID from counter
@@ -181,50 +183,17 @@ function _aish_find_highlighter
     end
 end
 
-# Render AI output with syntax highlighting for code blocks
+# Render AI output (markdown) with syntax highlighting
 function _aish_render_output
     set -l text "$argv"
     set -l highlighter (_aish_find_highlighter)
-    set -l in_code false
-    set -l lang ""
-    set -l code_buf
 
-    for line in (string split \n -- "$text")
-        if test $in_code = true
-            if string match -qr '^```\s*$' -- "$line"
-                if test -n "$highlighter" -a -n "$lang"
-                    printf '%s\n' $code_buf | $highlighter --color=always --style=plain --paging=never --language=$lang
-                else
-                    set_color yellow
-                    printf '%s\n' $code_buf
-                    set_color normal
-                end
-                set in_code false
-                set lang ""
-                set code_buf
-            else
-                set -a code_buf "$line"
-            end
-        else
-            if string match -qr '^```' -- "$line"
-                set lang (string replace -r '^```' '' -- "$line" | string trim)
-                set in_code true
-                set code_buf
-            else
-                set_color cyan
-                printf '%s\n' "$line"
-                set_color normal
-            end
-        end
-    end
-
-    # Handle unclosed code block
-    if test $in_code = true
-        if set -q code_buf[1]
-            set_color yellow
-            printf '%s\n' $code_buf
-            set_color normal
-        end
+    if test -n "$highlighter"
+        printf '%s\n' "$text" | $highlighter --color=always --style=plain --paging=never --language=md
+    else
+        set_color cyan
+        printf '%s\n' "$text"
+        set_color normal
     end
 end
 
